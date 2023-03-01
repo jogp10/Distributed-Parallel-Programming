@@ -6,4 +6,4 @@ Group members:
 
 1. João Pinheiro (up202008133@up.pt)
 2. João Matos (up202006287@up.pt)
-3. Ricardo (up202005103@up.pt)
+3. Ricardo Cavalheiro (up202005103@up.pt)
