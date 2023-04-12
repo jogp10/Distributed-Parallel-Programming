@@ -1,12 +1,12 @@
 Compile the files:
-javac Server.java
-javac Client.java
-javac Player.java
+javac main.server.Server.java
+javac main.client.Client.java
+javac main.game.Player.java
 
 
 Run the server:
-java Server
+java main.server.Server
 
 Run multiple clients in separate terminal windows:
-java Client
+java main.client.Client
 Type exit to disconnect from the server.

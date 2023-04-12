@@ -1,19 +1,45 @@
 package main.client;
+import java.io.*;
+import java.net.*;
+import java.nio.*;
+import java.nio.channels.*;
+import java.util.*;
 
 public class Client {
+    private static final String SERVER_IP = "localhost";
+    private static final int SERVER_PORT = 12345;
+    private static final int BUFFER_SIZE = 1024;
 
-    public static void main(String[] args) {
-        // Press Alt+Enter with your caret at the highlighted text to see how
-        // IntelliJ IDEA suggests fixing it.
-        System.out.printf("Hello and welcome!\n");
+    public static void main(String[] args) throws IOException {
+        SocketChannel socketChannel = SocketChannel.open(new InetSocketAddress(SERVER_IP, SERVER_PORT));
+        socketChannel.configureBlocking(false);
 
-        // Press Shift+F10 or click the green arrow button in the gutter to run the code.
-        for (int i = 1; i <= 5; i++) {
+        Scanner scanner = new Scanner(System.in);
+        ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
+        String message = "";
+        while (!message.equals("exit")) {
+            buffer.clear();
+            int bytesRead = socketChannel.read(buffer);
+            if (bytesRead == -1) {
+                System.out.println("Disconnected from server");
+                break;
+            } else if (bytesRead > 0) {
+                buffer.flip();
+                message = new String(buffer.array(), 0, bytesRead);
+                System.out.println(message);
+            }
 
-            // Press Shift+F9 to start debugging your code. We have set one breakpoint
-            // for you, but you can always add more by pressing Ctrl+F8.
-            System.out.println("i = " + i);
+            if (message.equals("Game started! Guess a number between 1 and 100")) {
+                System.out.print("Enter your guess: ");
+                message = scanner.nextLine();
+                buffer.clear();
+                buffer.put(message.getBytes());
+                buffer.flip();
+                socketChannel.write(buffer);
+            }
         }
-    }
 
+        socketChannel.close();
+    }
 }
+

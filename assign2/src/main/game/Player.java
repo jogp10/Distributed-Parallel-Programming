@@ -1,8 +1,9 @@
+package main.game;
+
 import java.nio.channels.*;
 import java.util.Objects;
 
 public class Player {
-
     private int id;
     private int score;
     private SocketChannel socketChannel;
@@ -14,8 +15,7 @@ public class Player {
     }
 
     public int getId() {
-        return id;
-    }
+        return id;}
     public int getScore() {
         return score;
     }
