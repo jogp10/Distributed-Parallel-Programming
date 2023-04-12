@@ -10,10 +10,10 @@ public class Game {
     private final List<Player> players;
     private boolean isOver;
 
-    public Game(int id, int secretNumber) {
+    public Game(int id, int secretNumber, List<Player> players) {
         this.id = id;
         this.secretNumber = secretNumber;
-        this.players = new ArrayList<>();
+        this.players = players;
         this.isOver = false;
     }
 

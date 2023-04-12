@@ -1,7 +1,8 @@
 package main.server;
 
-import main.game.Game;
+
 import main.game.Player;
+import main.game.Game;
 
 import java.io.*;
 import java.net.*;
@@ -63,7 +64,7 @@ public class Server {
                     Player player = waitQueue.remove(0);
                     players.add(player);
                 }
-                Game game = new Game(secretNumber, players);
+                Game game = new Game(secretNumber, generateSecretNumber(), players);
                 activeGames.add(game);
                 sendMessageToPlayers(game, "main.game.Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
             }

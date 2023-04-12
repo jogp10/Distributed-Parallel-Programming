@@ -6,6 +6,8 @@ import java.util.Objects;
 public class Player {
     private int id;
     private int score;
+
+    boolean guessed = false;
     private SocketChannel socketChannel;
 
     public Player(int id, SocketChannel socketChannel) {
@@ -56,6 +58,19 @@ public class Player {
         hash = 59 * hash + this.id;
         hash = 59 * hash + Objects.hashCode(this.socketChannel);
         return hash;
+    }
+
+    public void setGuessed(boolean b) {
+        guessed = b;
+    }
+
+    public void notifyGameOver() {
+        // TODO Auto-generated method stub
+    }
+
+    public int makeGuess() {
+        // TODO Auto-generated method stub
+        return 0;
     }
 }
 
