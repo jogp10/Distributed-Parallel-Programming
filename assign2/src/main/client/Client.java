@@ -17,6 +17,7 @@ public class Client {
         Scanner scanner = new Scanner(System.in);
         ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
         String message = "";
+        System.out.println("Connected to server");
         while (!message.equals("exit")) {
             buffer.clear();
             int bytesRead = socketChannel.read(buffer);

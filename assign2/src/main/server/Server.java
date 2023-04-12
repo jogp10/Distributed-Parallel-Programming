@@ -28,6 +28,8 @@ public class Server {
         Selector selector = Selector.open();
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
+        System.out.println("Server is up and running");
+
         while (true) {
             selector.select();
             Iterator<SelectionKey> keyIterator = selector.selectedKeys().iterator();
@@ -66,7 +68,7 @@ public class Server {
                 }
                 Game game = new Game(secretNumber, generateSecretNumber(), players);
                 activeGames.add(game);
-                sendMessageToPlayers(game, "main.game.Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
+                sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
             }
         }
     }
@@ -92,9 +94,9 @@ public class Server {
         int guess = Integer.parseInt(message.trim());
         int distance = Math.abs(game.getSecretNumber() - guess);
         player.setScore(player.getScore() + (MAX_RANGE - distance));
-        sendMessageToPlayers(game, "main.game.Player " + player.getId() + " guessed " + guess + " and was " + distance + " away from the secret number");
+        sendMessageToPlayers(game, "Player " + player.getId() + " guessed " + guess + " and was " + distance + " away from the secret number");
         if (guess == game.getSecretNumber()) {
-            sendMessageToPlayers(game, "main.game.Player " + player.getId() + " guessed the secret number!");
+            sendMessageToPlayers(game, "Player " + player.getId() + " guessed the secret number!");
             activeGames.remove(game);
         } else {
             player.setGuessed(true);
@@ -115,7 +117,7 @@ public class Server {
             Game game = getGame(player);
             if (game != null) {
                 game.removePlayer(player);
-                sendMessageToPlayers(game, "main.game.Player " + player.getId() + " has left the game");
+                sendMessageToPlayers(game, "Player " + player.getId() + " has left the game");
                 if (game.getPlayers().isEmpty()) {
                     activeGames.remove(game);
                 }
