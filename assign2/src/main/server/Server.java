@@ -3,6 +3,8 @@ package main.server;
 
 import main.game.Player;
 import main.game.Game;
+import main.utils.Helper;
+import main.utils.MessageType;
 
 import java.io.*;
 import java.net.*;
@@ -12,14 +14,17 @@ import java.util.*;
 
 public class Server {
     private static final int PORT = 12345;
-    private static final int MAX_PLAYERS = 4;
+    private static final int MAX_PLAYERS = 3;
     private static final int MIN_RANGE = 1;
     private static final int MAX_RANGE = 100;
     private static final int BUFFER_SIZE = 1024;
 
     private static int playerCount = 0;
     private static List<Player> waitQueue = new ArrayList<>();
+    private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
+
+    private static int gameCount = 0;
 
     public static void main(String[] args) throws IOException {
         ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
@@ -42,11 +47,26 @@ public class Server {
                     clientSocketChannel.configureBlocking(false);
                     clientSocketChannel.register(selector, SelectionKey.OP_READ);
                     Player player = new Player(playerCount++, clientSocketChannel);
-                    waitQueue.add(player);
+                    unauthenticatedPlayers.add(player);
+                    sendMessageToPlayer(player, MessageType.AUTHENTICATION_REQUEST.toHeader());
                 } else if (key.isReadable()) {
                     SocketChannel clientSocketChannel = (SocketChannel) key.channel();
                     ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
-                    int bytesRead = clientSocketChannel.read(buffer);
+                    int bytesRead = -1;
+                    try{
+                        bytesRead = clientSocketChannel.read(buffer);
+                    }
+                    catch (SocketException e) {
+                        // Handle the "Connection reset" exception
+                        System.err.println("Connection reset by peer: " + e.getMessage());
+                        removePlayer(clientSocketChannel);
+//                        clientSocketChannel.close();
+                    }
+                    catch (IOException e) {
+                        // Handle other I/O exceptions
+                        e.printStackTrace();
+                    }
+
                     if (bytesRead == -1) {
                         // main.client.Client has disconnected
                         removePlayer(clientSocketChannel);
@@ -60,13 +80,16 @@ public class Server {
 
             // Start a new game if enough players are in the wait queue
             if (waitQueue.size() >= MAX_PLAYERS) {
-                int secretNumber = generateSecretNumber();
+//                int secretNumber = generateSecretNumber();
+
+                //matchmaking
                 List<Player> players = new ArrayList<>();
                 for (int i = 0; i < MAX_PLAYERS; i++) {
                     Player player = waitQueue.remove(0);
                     players.add(player);
                 }
-                Game game = new Game(secretNumber, generateSecretNumber(), players);
+
+                Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
                 activeGames.add(game);
                 sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
             }
@@ -77,7 +100,23 @@ public class Server {
         return new Random().nextInt(MAX_RANGE - MIN_RANGE + 1) + MIN_RANGE;
     }
 
+    private static void handleMessage(SocketChannel clientSocketChannel, String message, MessageType messageType){
+
+    }
     private static void handleMessage(SocketChannel clientSocketChannel, String message) {
+
+        switch (Helper.parseMessageType(message)) {
+            case GAME_GUESS -> handleGuessMessage(clientSocketChannel, Helper.parseMessage(message));
+            case AUTHENTICATION_ATTEMPT -> handleAuthentication(clientSocketChannel, Helper.parseMessage(message));
+            case DEFAULT ->
+                // Handle invalid message format or unsupported type
+                    System.err.println("Invalid message format or unsupported type: " + message);
+        }
+
+
+    }
+
+    private static void handleGuessMessage(SocketChannel clientSocketChannel, String message) {
         // Find the player associated with this client socket channel
         Player player = getPlayer(clientSocketChannel);
         if (player == null) {
@@ -91,22 +130,39 @@ public class Server {
         }
 
         // Process the message (i.e., guess)
-        int guess = Integer.parseInt(message.trim());
+        int guess;
+        try {
+            guess = Integer.parseInt(message.trim());
+        }
+        catch (NumberFormatException e) {
+            sendMessageToPlayer(player, "Invalid guess");
+            return;
+        }
         int distance = Math.abs(game.getSecretNumber() - guess);
         player.setScore(player.getScore() + (MAX_RANGE - distance));
-        sendMessageToPlayers(game, "Player " + player.getId() + " guessed " + guess + " and was " + distance + " away from the secret number");
+        sendMessageToPlayer(player, "Your guess was " + distance + " away from the secret number");
+
+//        sendMessageToPlayers(game, "Player " + player.getId() + " guessed " + guess + " and was " + distance + " away from the secret number");
         if (guess == game.getSecretNumber()) {
-            sendMessageToPlayers(game, "Player " + player.getId() + " guessed the secret number!");
-            activeGames.remove(game);
-        } else {
-            player.setGuessed(true);
+            sendMessageToPlayer(player, "You guessed the secret number!");
+//            sendMessageToPlayers(game, "Player " + player.getId() + " guessed the secret number!");
+//            activeGames.remove(game);
         }
+        player.setGuessed(true);
         // End the game if all players have made a guess
         //if (game.isAllPlayersGuessed()) {
-        if(true){
+        if(game.allPlayersGuessed()){
             sendMessageToPlayers(game, "All players have made a guess! The secret number was " + game.getSecretNumber());
             activeGames.remove(game);
         }
+    }
+
+    private static void handleAuthentication(SocketChannel clientSocketChannel, String parseMessage) {
+        //for now just send back the message, change later
+        sendMessage(clientSocketChannel, "<AUTHENTICATION_SUCCESSFUL>");
+        Player player = getUnauthenticatedPlayer(clientSocketChannel);
+        waitQueue.add(player);
+        unauthenticatedPlayers.remove(player);
     }
 
     private static void removePlayer(SocketChannel clientSocketChannel) {
@@ -140,6 +196,14 @@ public class Server {
         }
         return null;
     }
+ private static Player getUnauthenticatedPlayer(SocketChannel clientSocketChannel) {
+        for (Player player : unauthenticatedPlayers) {
+            if (player.getSocketChannel() == clientSocketChannel) {
+                return player;
+            }
+        }
+        return null;
+    }
 
     private static Game getGame(Player player) {
         for (Game game : activeGames) {
@@ -158,10 +222,29 @@ public class Server {
 
     private static void sendMessage(SocketChannel clientSocketChannel, String message) {
         try {
+            message += "\t";
             ByteBuffer buffer = ByteBuffer.wrap(message.getBytes());
+            //append \t to the end of the message
             clientSocketChannel.write(buffer);
+            while (buffer.hasRemaining()) {
+                clientSocketChannel.write(buffer);
+            }
+
+            // Clear the buffer after all data has been written
+            buffer.clear();
         } catch (IOException e) {
             removePlayer(clientSocketChannel);
         }
+    }
+
+    private static void sendMessageToPlayer(Player player, String message) {
+        sendMessage(player.getSocketChannel(), message);
+    }
+
+
+    //function that inrements the game count and returns the value
+    // it must be synchronized because it is called from multiple threads
+    private static synchronized int getAndIncrementGameCount() {
+        return ++gameCount;
     }
 }

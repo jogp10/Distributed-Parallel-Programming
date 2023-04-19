@@ -1,4 +1,7 @@
 package main.client;
+import main.utils.Helper;
+import main.utils.MessageType;
+
 import java.io.*;
 import java.net.*;
 import java.nio.*;
@@ -17,30 +20,87 @@ public class Client {
         Scanner scanner = new Scanner(System.in);
         ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
         String message = "";
+        String receivedMessage = "";
         System.out.println("Connected to server");
-        while (!message.equals("exit")) {
-            buffer.clear();
-            int bytesRead = socketChannel.read(buffer);
-            if (bytesRead == -1) {
-                System.out.println("Disconnected from server");
-                break;
-            } else if (bytesRead > 0) {
-                buffer.flip();
-                message = new String(buffer.array(), 0, bytesRead);
-                System.out.println(message);
+
+        //show an authentication sequence
+        receivedMessage = receiveServerMessage(socketChannel, buffer);
+        while (Helper.parseMessageType(receivedMessage) != MessageType.AUTHENTICATION_SUCCESSFUL) {
+            if (Helper.parseMessageType(receivedMessage) == MessageType.AUTHENTICATION_FAILURE) {
+                System.out.println("Authentication failed. Please try again.");
             }
 
-            if (message.equals("Game started! Guess a number between 1 and 100")) {
+            message = MessageType.AUTHENTICATION_ATTEMPT.toHeader();
+            System.out.print("Enter your username: ");
+            message += scanner.nextLine();
+            message += ";";
+            System.out.print("Enter your password: ");
+            message += scanner.nextLine();
+            System.out.println(message);
+            sendMessageToServer(socketChannel, buffer, message);
+            receivedMessage = receiveServerMessage(socketChannel, buffer);
+        }
+
+        while (!receivedMessage.equals("exit")) {
+            receivedMessage = receiveServerMessage(socketChannel, buffer);
+            message = MessageType.GAME_GUESS.toHeader();
+            if (receivedMessage.equals("Game started! Guess a number between 1 and 100")) {
                 System.out.print("Enter your guess: ");
-                message = scanner.nextLine();
-                buffer.clear();
-                buffer.put(message.getBytes());
-                buffer.flip();
-                socketChannel.write(buffer);
+                message += scanner.nextLine();
+                sendMessageToServer(socketChannel, buffer, message);
             }
         }
 
         socketChannel.close();
+    }
+
+    private static void sendMessageToServer(SocketChannel socketChannel, ByteBuffer buffer, String message) throws IOException {
+        buffer.clear();
+        buffer.put(message.getBytes());
+        buffer.flip();
+        while (buffer.hasRemaining()) {
+            socketChannel.write(buffer);
+        }
+    }
+
+    private static String receiveServerMessage(SocketChannel socketChannel, ByteBuffer buffer) throws IOException {
+        String receivedMessage = "";
+        buffer.clear();
+//        int bytesRead = socketChannel.read(buffer);
+//        if (bytesRead == -1) {
+//            System.out.println("Disconnected from server");
+//            return null;
+//        } else if (bytesRead > 0) {
+//            buffer.flip();
+//            receivedMessage = new String(buffer.array(), 0, bytesRead);
+//        }
+        while (true) {
+            // attempt to read data from the socket channel
+            int bytesRead = socketChannel.read(buffer);
+
+            // if no bytes were read, the connection has been lost
+            if (bytesRead == -1) {
+                throw new IOException("Socket channel connection lost.");
+            }
+
+
+            if (buffer.position() > 0) {
+                // convert the buffer to a string and append it to the message
+                receivedMessage += new String(buffer.array(), 0, bytesRead);
+
+                // if the message end character is found, exit the loop
+                if (buffer.hasArray() && buffer.array()[buffer.position() - 1] == '\t') {
+                    break;
+                }
+
+                // clear the buffer to read more data
+                buffer.clear();
+            }
+        }
+
+        receivedMessage = receivedMessage.substring(0, receivedMessage.length() - 1).trim();
+        if(!receivedMessage.equals(""))System.out.println(":-->" + receivedMessage);
+        return receivedMessage;
     }
 }
 

@@ -63,4 +63,13 @@ public class Game {
             player.notifyGameOver();
         }
     }
+
+    public boolean allPlayersGuessed() {
+        for (Player player : players) {
+            if (!player.getGuessed()) {
+                return false;
+            }
+        }
+        return true;
+    }
 }

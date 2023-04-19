@@ -4,7 +4,7 @@ import java.nio.channels.*;
 import java.util.Objects;
 
 public class Player {
-    private int id;
+    private final int id;
     private int score;
 
     boolean guessed = false;
@@ -62,6 +62,10 @@ public class Player {
 
     public void setGuessed(boolean b) {
         guessed = b;
+    }
+
+    public boolean getGuessed() {
+        return guessed;
     }
 
     public void notifyGameOver() {
