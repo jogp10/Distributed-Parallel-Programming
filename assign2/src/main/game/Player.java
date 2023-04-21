@@ -16,6 +16,12 @@ public class Player {
         this.socketChannel = socketChannel;
     }
 
+    public Player(int id, int score, SocketChannel socketChannel) {
+        this.id = id;
+        this.score = score;
+        this.socketChannel = socketChannel;
+    }
+
     public int getId() {
         return id;}
     public int getScore() {

@@ -140,20 +140,24 @@ public class Server {
         }
         int distance = Math.abs(game.getSecretNumber() - guess);
         player.setScore(player.getScore() + (MAX_RANGE - distance));
-        sendMessageToPlayer(player, "Your guess was " + distance + " away from the secret number");
 
-//        sendMessageToPlayers(game, "Player " + player.getId() + " guessed " + guess + " and was " + distance + " away from the secret number");
-        if (guess == game.getSecretNumber()) {
-            sendMessageToPlayer(player, "You guessed the secret number!");
-//            sendMessageToPlayers(game, "Player " + player.getId() + " guessed the secret number!");
-//            activeGames.remove(game);
-        }
+        // Mark the player as having made a guess
         player.setGuessed(true);
+
         // End the game if all players have made a guess
-        //if (game.isAllPlayersGuessed()) {
         if(game.allPlayersGuessed()){
             sendMessageToPlayers(game, "All players have made a guess! The secret number was " + game.getSecretNumber());
+
+            if (guess == game.getSecretNumber()) {
+                sendMessageToPlayer(player, "You guessed the secret number!");
+                sendMessageToPlayers(game, "Player " + player.getId() + " guessed the secret number!");
+            } else {
+                sendMessageToPlayer(player, "Your guess was " + distance + " away from the secret number");
+            }
+            
             activeGames.remove(game);
+        } else {
+            sendMessageToPlayer(player, "Waiting for other players to guess...");
         }
     }
 
