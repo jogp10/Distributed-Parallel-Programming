@@ -9,6 +9,13 @@ public class Player {
     private String username;
 
 
+
+    private int gamesPlayed;
+
+
+
+    private String username;
+
     boolean guessed = false;
     private SocketChannel socketChannel;
 
@@ -57,6 +64,18 @@ public class Player {
         if (this.score < -points) this.score = 0;
         this.score += points;
     }
+
+    public void setGamesPlayed(int gamesPlayed) {
+        this.gamesPlayed = gamesPlayed;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
 
     @Override
     public boolean equals(Object obj) {
@@ -110,5 +129,7 @@ public class Player {
         this.setGuessed(true);
         return 0;
     }
+
+
 }
 
