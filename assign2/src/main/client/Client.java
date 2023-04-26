@@ -8,6 +8,8 @@ import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
 
+import static main.utils.Helper.MESSAGE_TERMINATOR;
+
 public class Client {
     private static final String SERVER_IP = "localhost";
     private static final int SERVER_PORT = 12345;
@@ -26,6 +28,11 @@ public class Client {
         //show an authentication sequence
         receivedMessage = receiveServerMessage(socketChannel, buffer);
         while (Helper.parseMessageType(receivedMessage) != MessageType.AUTHENTICATION_SUCCESSFUL) {
+            if(Helper.parseMessageType(receivedMessage) == MessageType.INFO){
+                receivedMessage = receiveServerMessage(socketChannel, buffer);
+                continue;
+            }
+
             if (Helper.parseMessageType(receivedMessage) == MessageType.AUTHENTICATION_FAILURE) {
                 System.out.println("Authentication failed. Please try again.");
             }
@@ -89,7 +96,7 @@ public class Client {
                 receivedMessage += new String(buffer.array(), 0, bytesRead);
 
                 // if the message end character is found, exit the loop
-                if (buffer.hasArray() && buffer.array()[buffer.position() - 1] == '\t') {
+                if (buffer.hasArray() && buffer.array()[buffer.position() - 1] == MESSAGE_TERMINATOR) {
                     break;
                 }
 
@@ -100,6 +107,9 @@ public class Client {
 
         receivedMessage = receivedMessage.substring(0, receivedMessage.length() - 1).trim();
         if(!receivedMessage.equals(""))System.out.println(":-->" + receivedMessage);
+        if(Helper.parseMessageType(receivedMessage) == MessageType.INFO){
+            System.out.println('\n' + Helper.parseMessage(receivedMessage) + '\n');
+        }
         return receivedMessage;
     }
 }

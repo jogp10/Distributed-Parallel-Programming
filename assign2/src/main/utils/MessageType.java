@@ -9,6 +9,8 @@ public enum MessageType {
     GAME_GUESS,
     DISCONNECT,
     KEEP_ALIVE,
+
+    INFO, //server to client, should be printed to the user
     DEFAULT;
     //...
 

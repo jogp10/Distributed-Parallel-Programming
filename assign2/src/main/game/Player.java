@@ -7,6 +7,13 @@ public class Player {
     private final int id;
     private int score;
 
+
+    private int gamesPlayed;
+
+
+
+    private String username;
+
     boolean guessed = false;
     private SocketChannel socketChannel;
 
@@ -39,6 +46,18 @@ public class Player {
     public void incrementScore(int points) {
         this.score += points;
     }
+
+    public void setGamesPlayed(int gamesPlayed) {
+        this.gamesPlayed = gamesPlayed;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
 
     @Override
     public boolean equals(Object obj) {
@@ -82,5 +101,7 @@ public class Player {
         // TODO Auto-generated method stub
         return 0;
     }
+
+
 }
 
