@@ -53,18 +53,18 @@ public class Game {
                 int guess = player.makeGuess();
                 if (guess == secretNumber) {
                     player.incrementScore(100);
-                    isOver = true;
                 } else {
                     int distance = Math.abs(guess - secretNumber);
                     int points = 50 - distance;
                     player.incrementScore(points);
                 }
+
+                if (allPlayersGuessed()) {
+                    isOver = true;
+                }
             }
         }
-        // Notify players that the game is over
-        for (Player player : players) {
-            player.notifyGameOver();
-        }
+        gameOver();
     }
 
     public boolean allPlayersGuessed() {
@@ -77,9 +77,10 @@ public class Game {
     }
 
     public void madeGuess(Player player, int distance) {
+        player.setGuessed(true);
         for (int i=0; i<players.size(); i++) {
             Player p = players.get(i);
-            if (p.getGuessed() && player.getId() == p.getId()) {
+            if (player.getId() == p.getId()) {
                 this.distances[i] = distance;
             }
         }
@@ -92,5 +93,12 @@ public class Game {
             }
         }
         return -1;
+    }
+
+    public void gameOver() {
+        // Notify players that the game is over
+        for (Player player : players) {
+            player.notifyGameOver();
+        }
     }
 }

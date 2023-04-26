@@ -139,10 +139,9 @@ public class Server {
             return;
         }
         int distance = Math.abs(game.getSecretNumber() - guess);
-        player.setScore(player.getScore() + (MAX_RANGE - distance));
+        player.incrementScore(MAX_RANGE/2 - distance);
 
         // Mark the player as having made a guess
-        player.makeGuess();
         game.madeGuess(player, distance);
 
         // End the game if all players have made a guess
@@ -166,11 +165,12 @@ public class Server {
 
     private static void endGame(Game game) {
         activeGames.remove(game);
-        for (Player p: game.getPlayers()) {
-            p.notifyGameOver();
+        game.gameOver();
+
+        for (Player p : game.getPlayers()) {
+            sendMessageToPlayer(p, "Your score is " + p.getScore());
             waitQueue.add(p);
         }
-
     }
 
     private static void handleAuthentication(SocketChannel clientSocketChannel, String parseMessage) {
