@@ -6,6 +6,8 @@ import java.util.Objects;
 public class Player {
     private final int id;
     private int score;
+    private String username;
+
 
 
     private int gamesPlayed;
@@ -29,8 +31,23 @@ public class Player {
         this.socketChannel = socketChannel;
     }
 
+    public Player(int id, String username, SocketChannel socketChannel) {
+        this.id = id;
+        this.username = username;
+        this.score = 0;
+        this.socketChannel = socketChannel;
+    }
+
+    public Player(int id, String username, int score, SocketChannel socketChannel) {
+        this.id = id;
+        this.username = username;
+        this.score = score;
+        this.socketChannel = socketChannel;
+    }
+
     public int getId() {
-        return id;}
+        return id;
+    }
     public int getScore() {
         return score;
     }
@@ -44,6 +61,7 @@ public class Player {
     }
 
     public void incrementScore(int points) {
+        if (this.score < -points) this.score = 0;
         this.score += points;
     }
 
@@ -93,12 +111,22 @@ public class Player {
         return guessed;
     }
 
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
     public void notifyGameOver() {
         // TODO Auto-generated method stub
+        this.setGuessed(false);
     }
 
     public int makeGuess() {
         // TODO Auto-generated method stub
+        this.setGuessed(true);
         return 0;
     }
 
