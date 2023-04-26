@@ -142,7 +142,7 @@ public class Server {
         player.setScore(player.getScore() + (MAX_RANGE - distance));
 
         // Mark the player as having made a guess
-        player.setGuessed(true);
+        player.makeGuess();
         game.madeGuess(player, distance);
 
         // End the game if all players have made a guess
@@ -157,11 +157,20 @@ public class Server {
                     sendMessageToPlayer(p, "Your guess was " + game.getDistance(p) + " away from the secret number");
                 }
             }
-            
-            activeGames.remove(game);
+
+            endGame(game);
         } else {
             sendMessageToPlayer(player, "Waiting for other players to guess...");
         }
+    }
+
+    private static void endGame(Game game) {
+        activeGames.remove(game);
+        for (Player p: game.getPlayers()) {
+            p.notifyGameOver();
+            waitQueue.add(p);
+        }
+
     }
 
     private static void handleAuthentication(SocketChannel clientSocketChannel, String parseMessage) {

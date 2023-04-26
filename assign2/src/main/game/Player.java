@@ -102,10 +102,12 @@ public class Player {
 
     public void notifyGameOver() {
         // TODO Auto-generated method stub
+        this.setGuessed(false);
     }
 
     public int makeGuess() {
         // TODO Auto-generated method stub
+        this.setGuessed(true);
         return 0;
     }
 }
