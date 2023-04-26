@@ -143,6 +143,7 @@ public class Server {
 
         // Mark the player as having made a guess
         player.setGuessed(true);
+        game.madeGuess(player, distance);
 
         // End the game if all players have made a guess
         if(game.allPlayersGuessed()){
@@ -150,9 +151,11 @@ public class Server {
 
             if (guess == game.getSecretNumber()) {
                 sendMessageToPlayer(player, "You guessed the secret number!");
-                sendMessageToPlayers(game, "Player " + player.getId() + " guessed the secret number!");
+                sendMessageToPlayers(game, "Player " + player.getUsername() + " guessed the secret number!");
             } else {
-                sendMessageToPlayer(player, "Your guess was " + distance + " away from the secret number");
+                for (Player p : game.getPlayers()) {
+                    sendMessageToPlayer(p, "Your guess was " + game.getDistance(p) + " away from the secret number");
+                }
             }
             
             activeGames.remove(game);
@@ -177,7 +180,7 @@ public class Server {
             Game game = getGame(player);
             if (game != null) {
                 game.removePlayer(player);
-                sendMessageToPlayers(game, "Player " + player.getId() + " has left the game");
+                sendMessageToPlayers(game, "Player " + player.getUsername() + " has left the game");
                 if (game.getPlayers().isEmpty()) {
                     activeGames.remove(game);
                 }
