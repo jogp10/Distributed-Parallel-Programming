@@ -7,15 +7,7 @@ public class Player {
     private final int id;
     private int score;
     private String username;
-
-
-
     private int gamesPlayed;
-
-
-
-    private String username;
-
     boolean guessed = false;
     private SocketChannel socketChannel;
 
@@ -61,21 +53,17 @@ public class Player {
     }
 
     public void incrementScore(int points) {
-        if (this.score < -points) this.score = 0;
         this.score += points;
+        if (this.score < 0) this.score = 0;
     }
 
     public void setGamesPlayed(int gamesPlayed) {
         this.gamesPlayed = gamesPlayed;
     }
 
-    public String getUsername() {
-        return username;
+    public int getGamesPlayed() {
+        return this.gamesPlayed;
     }
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
 
     @Override
     public boolean equals(Object obj) {
@@ -89,10 +77,7 @@ public class Player {
         if (this.id != other.id) {
             return false;
         }
-        if (this.socketChannel != other.socketChannel) {
-            return false;
-        }
-        return true;
+        return this.socketChannel == other.socketChannel;
     }
 
     @Override
