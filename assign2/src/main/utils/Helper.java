@@ -51,4 +51,7 @@ public class Helper {
     }
 
 
+    public static String generateSessionToken() {
+        return hashPassword(String.valueOf(System.currentTimeMillis()));
+    }
 }
