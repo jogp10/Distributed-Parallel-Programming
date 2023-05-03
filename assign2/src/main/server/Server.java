@@ -44,7 +44,53 @@ public class Server {
 
         System.out.println("Server is up and running");
 
+        new Thread(() -> {
+            while (true) {
+                // Start a new game if enough players are in the wait queue
+                if (waitQueue.size() >= MAX_PLAYERS) {
+
+                    List<List<Integer>> eligibleGame  = new ArrayList<>();
+                    //matchmaking
+                    for(Player player : waitQueue) {
+                        List<Integer> eligPlayers = findEligibleOpponents(player, waitQueue);
+                        eligibleGame.add(eligPlayers);
+
+                    }
+                    //Intersect all the lists
+                    List<Integer> intersect = eligibleGame.get(0);
+                    for(int i = 1; i < eligibleGame.size(); i++) {
+                        intersect.retainAll(eligibleGame.get(i));
+                    }
+                    //Create a new game with the intersected players
+                    if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
+                        System.out.println("Creating a new game with players: " + intersect);
+                        List<Player> players = new ArrayList<>();
+                        for (int i = 0; i < MAX_PLAYERS; i++) {
+                            Player player = waitQueue.remove(0);
+                            players.add(player);
+                            player.stopWaitTimer();
+                        }
+
+                        threadPool.submit(() -> {
+                            Game game = new Game(getAndIncrementGameCount(), players);
+                            activeGames.add(game);
+                            sendMessageToPlayers(game, "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
+                        });
+                    }
+                }
+
+                    // Sleep for some time to avoid high CPU usage
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    // Handle the exception
+                }
+            }
+        }).start();
+
+
         while (true) {
+
             selector.select();
             Iterator<SelectionKey> keyIterator = selector.selectedKeys().iterator();
             while (keyIterator.hasNext()) {
@@ -85,37 +131,9 @@ public class Server {
                         handleMessage(clientSocketChannel, message);
                     }
                 }
-            }
 
-            // Start a new game if enough players are in the wait queue
-            if (waitQueue.size() >= MAX_PLAYERS) {
 
-                List<List<Integer>> eligibleGame  = new ArrayList<>();
-                //matchmaking
-                for(Player player : waitQueue) {
-                    List<Integer> eligPlayers = findEligibleOpponents(player, waitQueue);
-                    eligibleGame.add(eligPlayers);
-                }
-                //Intersect all the lists
-                List<Integer> intersect = eligibleGame.get(0);
-                for(int i = 1; i < eligibleGame.size(); i++) {
-                    intersect.retainAll(eligibleGame.get(i));
-                }
-                //Create a new game with the intersected players
-                if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
-                    List<Player> players = new ArrayList<>();
-                    for (int i = 0; i < MAX_PLAYERS; i++) {
-                        Player player = waitQueue.remove(0);
-                        players.add(player);
-                        player.stopWaitTimer();
-                    }
 
-                    threadPool.submit(() -> {
-                        Game game = new Game(getAndIncrementGameCount(), players);
-                        activeGames.add(game);
-                        sendMessageToPlayers(game, "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
-                    });
-                }
 
 
                 /*
@@ -280,6 +298,7 @@ public class Server {
             player.setScore(0);
             player.setGamesPlayed(0);
             waitQueue.add(player);
+            player.startWaitTimer();
             unauthenticatedPlayers.remove(player);
 
             sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
@@ -395,7 +414,7 @@ public class Server {
     public static List<Integer> findEligibleOpponents(Player player, List<Player> Players){
         List<Integer> eligibleOpponents = new ArrayList<>();
         for(int i = 0; i < Players.size(); i++){
-            if(abs(Players.get(i).getScore() - player.getScore()) <= ratio * player.getWaitingTime()){
+            if(abs(Players.get(i).getScore() - player.getScore()) <= (ratio * player.getWaitingTime())){
                 eligibleOpponents.add(i);
             }
         }
