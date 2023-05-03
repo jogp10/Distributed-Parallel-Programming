@@ -6,7 +6,8 @@ import java.util.Objects;
 public class Player {
     private final int id;
     private int score;
-
+    private String username;
+    private int gamesPlayed;
     boolean guessed = false;
     private SocketChannel socketChannel;
 
@@ -22,8 +23,23 @@ public class Player {
         this.socketChannel = socketChannel;
     }
 
+    public Player(int id, String username, SocketChannel socketChannel) {
+        this.id = id;
+        this.username = username;
+        this.score = 0;
+        this.socketChannel = socketChannel;
+    }
+
+    public Player(int id, String username, int score, SocketChannel socketChannel) {
+        this.id = id;
+        this.username = username;
+        this.score = score;
+        this.socketChannel = socketChannel;
+    }
+
     public int getId() {
-        return id;}
+        return id;
+    }
     public int getScore() {
         return score;
     }
@@ -38,6 +54,15 @@ public class Player {
 
     public void incrementScore(int points) {
         this.score += points;
+        if (this.score < 0) this.score = 0;
+    }
+
+    public void setGamesPlayed(int gamesPlayed) {
+        this.gamesPlayed = gamesPlayed;
+    }
+
+    public int getGamesPlayed() {
+        return this.gamesPlayed;
     }
 
     @Override
@@ -52,10 +77,7 @@ public class Player {
         if (this.id != other.id) {
             return false;
         }
-        if (this.socketChannel != other.socketChannel) {
-            return false;
-        }
-        return true;
+        return this.socketChannel == other.socketChannel;
     }
 
     @Override
@@ -74,13 +96,25 @@ public class Player {
         return guessed;
     }
 
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
     public void notifyGameOver() {
         // TODO Auto-generated method stub
+        this.setGuessed(false);
     }
 
     public int makeGuess() {
         // TODO Auto-generated method stub
+        this.setGuessed(true);
         return 0;
     }
+
+
 }
 
