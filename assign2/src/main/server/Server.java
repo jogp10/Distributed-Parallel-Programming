@@ -12,6 +12,8 @@ import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
 
+import static main.utils.Helper.MESSAGE_TERMINATOR;
+
 enum MatchMaking {
     RANKED,
     SIMPLE
@@ -179,10 +181,89 @@ public class Server {
 
     private static void handleAuthentication(SocketChannel clientSocketChannel, String parseMessage) {
         //for now just send back the message, change later
-        sendMessage(clientSocketChannel, "<AUTHENTICATION_SUCCESSFUL>");
-        Player player = getUnauthenticatedPlayer(clientSocketChannel);
-        waitQueue.add(player);
-        unauthenticatedPlayers.remove(player);
+        //split message on ';'
+        String[] tokens = parseMessage.split(";");
+        String username = tokens[0];
+        String password = tokens[1];
+        String csvFile = "users.csv";
+
+        //check that the player is not currently loggedIn
+        if(isLoggedIn(username)){
+            sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "The user is already logged in.");
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Already logged in!");
+            return;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
+            String line;
+            boolean headerLine = true;
+            while ((line = reader.readLine()) != null) {
+                if(headerLine){
+                    headerLine = false;
+                    continue;
+                }
+                String[] fields = line.split(",");
+                String csvUsername = fields[0];
+                String csvPassword = fields[1];
+                int csvScore = Integer.parseInt(fields[2]);
+                int csvGamesPlayed = Integer.parseInt(fields[3]);
+
+                if (csvUsername.equals(username)) {
+                    if (Helper.verifyPassword(password, csvPassword)) {
+                        sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully logged in.");
+                        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+                        Player player = getUnauthenticatedPlayer(clientSocketChannel);
+                        assert player != null;
+                        player.setUsername(username);
+                        player.setScore(csvScore);
+                        player.setGamesPlayed(csvGamesPlayed);
+                        player.setSessionToken(Helper.generateSessionToken());
+
+                        waitQueue.add(player);
+                        unauthenticatedPlayers.remove(player);
+                    } else {
+                        // Password incorrect
+                        sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Incorrect password. Please try again.");
+
+                        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+                    }
+                    return;
+                }
+            }
+        }
+        catch (IOException e) {
+            System.err.println("Error reading CSV file: " + e.getMessage());
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+            return;
+        }
+
+
+        //if user was not in the database
+        // Add new user to CSV
+        try (FileWriter writer = new FileWriter(csvFile, true)) {
+
+            String hashedPassword = Helper.hashPassword(password);
+
+            String newLine = username + "," + hashedPassword + "," + 0 + "," + 0 + "\n";
+            writer.write(newLine);
+
+            Player player = getUnauthenticatedPlayer(clientSocketChannel);
+            assert player != null;
+            player.setUsername(username);
+            player.setScore(0);
+            player.setGamesPlayed(0);
+            waitQueue.add(player);
+            unauthenticatedPlayers.remove(player);
+
+            sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
+
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+
+        } catch (IOException e) {
+            System.err.println("Error writing to CSV file: " + e.getMessage());
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+        }
+
     }
 
     private static void removePlayer(SocketChannel clientSocketChannel) {
@@ -199,6 +280,22 @@ public class Server {
                 }
             }
         }
+    }
+
+    private static boolean isLoggedIn(String username){
+        for (Player player: waitQueue){
+            if (player.getUsername().equalsIgnoreCase(username)) {
+                return true;
+            }
+        }
+        for (Game game: activeGames){
+            for (Player player: game.getPlayers()){
+                if (player.getUsername().equalsIgnoreCase(username)){
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static Player getPlayer(SocketChannel clientSocketChannel) {
@@ -242,7 +339,7 @@ public class Server {
 
     private static void sendMessage(SocketChannel clientSocketChannel, String message) {
         try {
-            message += "\t";
+            message += MESSAGE_TERMINATOR;
             ByteBuffer buffer = ByteBuffer.wrap(message.getBytes());
             //append \t to the end of the message
             clientSocketChannel.write(buffer);

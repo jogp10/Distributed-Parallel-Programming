@@ -7,6 +7,7 @@ public class Player {
     private final int id;
     private int score;
     private String username;
+    private String sessionToken;
     private int gamesPlayed;
     boolean guessed = false;
     private SocketChannel socketChannel;
@@ -102,6 +103,14 @@ public class Player {
 
     public String getUsername() {
         return username;
+    }
+
+    public void setSessionToken(String sessionToken) {
+        this.sessionToken = sessionToken;
+    }
+
+    public String getSessionToken() {
+        return sessionToken;
     }
 
     public void notifyGameOver() {
