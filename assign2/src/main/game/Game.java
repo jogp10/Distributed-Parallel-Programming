@@ -8,13 +8,15 @@ public class Game {
     private final int id;
     private final int secretNumber;
     private final List<Player> players;
+    private static final int MAX_RANGE = 100;
+    private static final int MIN_RANGE = 1;
 
     private int[] distances;
     private boolean isOver;
 
-    public Game(int id, int secretNumber, List<Player> players) {
+    public Game(int id, List<Player> players) {
         this.id = id;
-        this.secretNumber = secretNumber;
+        this.secretNumber = generateSecretNumber();
         this.players = players;
         this.distances = new int[players.size()];
         this.isOver = false;
@@ -22,6 +24,9 @@ public class Game {
 
     public int getId() {
         return id;
+    }
+    private static int generateSecretNumber() {
+        return new Random().nextInt(MAX_RANGE - MIN_RANGE + 1) + MIN_RANGE;
     }
 
     public int getSecretNumber() {
@@ -86,6 +91,20 @@ public class Game {
         }
     }
 
+    public void guess(Player player, int guess) {
+        player.setGuessed(true);
+
+        int distance = Math.abs(getSecretNumber() - guess);
+        player.incrementScore(MAX_RANGE/2 - distance);
+
+        for (int i=0; i<players.size(); i++) {
+            Player p = players.get(i);
+            if (player.getId() == p.getId()) {
+                this.distances[i] = distance;
+            }
+        }
+    }
+
     public int getDistance(Player player) {
         for (int i=0; i<players.size(); i++) {
             if(players.get(i).getId() == player.getId()) {
@@ -100,5 +119,13 @@ public class Game {
         for (Player player : players) {
             player.notifyGameOver();
         }
+    }
+
+    public int getMaxRange() {
+        return MAX_RANGE;
+    }
+
+    public int getMinRange() {
+        return MIN_RANGE;
     }
 }

@@ -11,20 +11,25 @@ import java.net.*;
 import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import static main.utils.Helper.MESSAGE_TERMINATOR;
 
 import static java.lang.Math.abs;
 
 
 public class Server {
     private static final int PORT = 12345;
-    private static final int MAX_PLAYERS = 3;
-    private static final int MIN_RANGE = 1;
-    private static final int MAX_RANGE = 100;
+    private static final int MAX_PLAYERS = 2;
+    private static final int MAX_GAMES = 10;
     private static final int BUFFER_SIZE = 1024;
+
     private static int playerCount = 0;
     private static List<Player> waitQueue = new ArrayList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
+    private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
     private static int gameCount = 0;
     private static double ratio = 10;
 
@@ -97,7 +102,7 @@ public class Server {
                     intersect.retainAll(eligibleGame.get(i));
                 }
                 //Create a new game with the intersected players
-                if(intersect.size()>= MAX_PLAYERS) {
+                if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                     List<Player> players = new ArrayList<>();
                     for (int i = 0; i < MAX_PLAYERS; i++) {
                         Player player = waitQueue.remove(0);
@@ -105,9 +110,11 @@ public class Server {
                         player.stopWaitTimer();
                     }
 
-                    Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
-                    activeGames.add(game);
-                    sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
+                    threadPool.submit(() -> {
+                        Game game = new Game(getAndIncrementGameCount(), players);
+                        activeGames.add(game);
+                        sendMessageToPlayers(game, "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
+                    });
                 }
 
 
@@ -121,13 +128,11 @@ public class Server {
                 Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
                 activeGames.add(game);
                 sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);*/
+
             }
         }
     }
 
-    private static int generateSecretNumber() {
-        return new Random().nextInt(MAX_RANGE - MIN_RANGE + 1) + MIN_RANGE;
-    }
 
     private static void handleMessage(SocketChannel clientSocketChannel, String message, MessageType messageType){
 
@@ -167,11 +172,9 @@ public class Server {
             sendMessageToPlayer(player, "Invalid guess");
             return;
         }
-        int distance = abs(game.getSecretNumber() - guess);
-        player.incrementScore(MAX_RANGE/2 - distance);
 
         // Mark the player as having made a guess
-        game.madeGuess(player, distance);
+        game.guess(player, guess);
 
         // End the game if all players have made a guess
         if(game.allPlayersGuessed()){
@@ -204,11 +207,90 @@ public class Server {
 
     private static void handleAuthentication(SocketChannel clientSocketChannel, String parseMessage) {
         //for now just send back the message, change later
-        sendMessage(clientSocketChannel, "<AUTHENTICATION_SUCCESSFUL>");
-        Player player = getUnauthenticatedPlayer(clientSocketChannel);
-        waitQueue.add(player);
-        player.startWaitTimer();
-        unauthenticatedPlayers.remove(player);
+        //split message on ';'
+        String[] tokens = parseMessage.split(";");
+        String username = tokens[0];
+        String password = tokens[1];
+        String csvFile = "users.csv";
+
+        //check that the player is not currently loggedIn
+        if(isLoggedIn(username)){
+            sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "The user is already logged in.");
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Already logged in!");
+            return;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
+            String line;
+            boolean headerLine = true;
+            while ((line = reader.readLine()) != null) {
+                if(headerLine){
+                    headerLine = false;
+                    continue;
+                }
+                String[] fields = line.split(",");
+                String csvUsername = fields[0];
+                String csvPassword = fields[1];
+                int csvScore = Integer.parseInt(fields[2]);
+                int csvGamesPlayed = Integer.parseInt(fields[3]);
+
+                if (csvUsername.equals(username)) {
+                    if (Helper.verifyPassword(password, csvPassword)) {
+                        sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully logged in.");
+                        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+                        Player player = getUnauthenticatedPlayer(clientSocketChannel);
+                        assert player != null;
+                        player.setUsername(username);
+                        player.setScore(csvScore);
+                        player.setGamesPlayed(csvGamesPlayed);
+                        player.setSessionToken(Helper.generateSessionToken());
+
+                        waitQueue.add(player);
+                        player.startWaitTimer();
+                        unauthenticatedPlayers.remove(player);
+                    } else {
+                        // Password incorrect
+                        sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Incorrect password. Please try again.");
+
+                        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+                    }
+                    return;
+                }
+            }
+        }
+        catch (IOException e) {
+            System.err.println("Error reading CSV file: " + e.getMessage());
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+            return;
+        }
+
+
+        //if user was not in the database
+        // Add new user to CSV
+        try (FileWriter writer = new FileWriter(csvFile, true)) {
+
+            String hashedPassword = Helper.hashPassword(password);
+
+            String newLine = username + "," + hashedPassword + "," + 0 + "," + 0 + "\n";
+            writer.write(newLine);
+
+            Player player = getUnauthenticatedPlayer(clientSocketChannel);
+            assert player != null;
+            player.setUsername(username);
+            player.setScore(0);
+            player.setGamesPlayed(0);
+            waitQueue.add(player);
+            unauthenticatedPlayers.remove(player);
+
+            sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
+
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+
+        } catch (IOException e) {
+            System.err.println("Error writing to CSV file: " + e.getMessage());
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+        }
+
     }
 
     private static void removePlayer(SocketChannel clientSocketChannel) {
@@ -225,6 +307,22 @@ public class Server {
                 }
             }
         }
+    }
+
+    private static boolean isLoggedIn(String username){
+        for (Player player: waitQueue){
+            if (player.getUsername().equalsIgnoreCase(username)) {
+                return true;
+            }
+        }
+        for (Game game: activeGames){
+            for (Player player: game.getPlayers()){
+                if (player.getUsername().equalsIgnoreCase(username)){
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static Player getPlayer(SocketChannel clientSocketChannel) {
@@ -268,7 +366,7 @@ public class Server {
 
     private static void sendMessage(SocketChannel clientSocketChannel, String message) {
         try {
-            message += "\t";
+            message += MESSAGE_TERMINATOR;
             ByteBuffer buffer = ByteBuffer.wrap(message.getBytes());
             //append \t to the end of the message
             clientSocketChannel.write(buffer);
@@ -304,4 +402,3 @@ public class Server {
         return eligibleOpponents;
     }
 }
-
