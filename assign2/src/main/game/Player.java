@@ -2,6 +2,8 @@ package main.game;
 
 import java.nio.channels.*;
 import java.util.Objects;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class Player {
     private final int id;
@@ -10,6 +12,9 @@ public class Player {
     private int gamesPlayed;
     boolean guessed = false;
     private SocketChannel socketChannel;
+    private Timer waitTimer;
+    private int waitingTime = 0;
+    private boolean inQueue = false;
 
     public Player(int id, SocketChannel socketChannel) {
         this.id = id;
@@ -103,6 +108,36 @@ public class Player {
     public String getUsername() {
         return username;
     }
+
+    public void startWaitTimer() {
+        waitTimer = new Timer();
+        inQueue = true;
+        waitTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                waitingTime++;
+                //System.out.println("Waiting time: " + waitingTime + " seconds");
+            }
+        }, 0, 1000); // 1000 milliseconds = 1 second
+    }
+
+    public void stopWaitTimer() {
+        if (waitTimer != null) {
+            waitTimer.cancel();
+            waitTimer = null;
+        }
+        inQueue = false;
+        waitingTime = 0;
+    }
+
+    public int getWaitingTime() {
+        return waitingTime;
+    }
+
+    public boolean isInQueue() {
+        return inQueue;
+    }
+
 
     public void notifyGameOver() {
         // TODO Auto-generated method stub

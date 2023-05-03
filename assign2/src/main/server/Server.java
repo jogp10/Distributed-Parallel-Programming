@@ -12,10 +12,8 @@ import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
 
-enum MatchMaking {
-    RANKED,
-    SIMPLE
-}
+import static java.lang.Math.abs;
+
 
 public class Server {
     private static final int PORT = 12345;
@@ -23,12 +21,14 @@ public class Server {
     private static final int MIN_RANGE = 1;
     private static final int MAX_RANGE = 100;
     private static final int BUFFER_SIZE = 1024;
-
     private static int playerCount = 0;
     private static List<Player> waitQueue = new ArrayList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
     private static int gameCount = 0;
+    private static double ratio = 10;
+
+
 
     public static void main(String[] args) throws IOException {
         ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
@@ -84,9 +84,34 @@ public class Server {
 
             // Start a new game if enough players are in the wait queue
             if (waitQueue.size() >= MAX_PLAYERS) {
-//                int secretNumber = generateSecretNumber();
 
+                List<List<Integer>> eligibleGame  = new ArrayList<>();
                 //matchmaking
+                for(Player player : waitQueue) {
+                    List<Integer> eligPlayers = findEligibleOpponents(player, waitQueue);
+                    eligibleGame.add(eligPlayers);
+                }
+                //Intersect all the lists
+                List<Integer> intersect = eligibleGame.get(0);
+                for(int i = 1; i < eligibleGame.size(); i++) {
+                    intersect.retainAll(eligibleGame.get(i));
+                }
+                //Create a new game with the intersected players
+                if(intersect.size()>= MAX_PLAYERS) {
+                    List<Player> players = new ArrayList<>();
+                    for (int i = 0; i < MAX_PLAYERS; i++) {
+                        Player player = waitQueue.remove(0);
+                        players.add(player);
+                        player.stopWaitTimer();
+                    }
+
+                    Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
+                    activeGames.add(game);
+                    sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
+                }
+
+
+                /*
                 List<Player> players = new ArrayList<>();
                 for (int i = 0; i < MAX_PLAYERS; i++) {
                     Player player = waitQueue.remove(0);
@@ -95,7 +120,7 @@ public class Server {
 
                 Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
                 activeGames.add(game);
-                sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
+                sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);*/
             }
         }
     }
@@ -142,7 +167,7 @@ public class Server {
             sendMessageToPlayer(player, "Invalid guess");
             return;
         }
-        int distance = Math.abs(game.getSecretNumber() - guess);
+        int distance = abs(game.getSecretNumber() - guess);
         player.incrementScore(MAX_RANGE/2 - distance);
 
         // Mark the player as having made a guess
@@ -182,6 +207,7 @@ public class Server {
         sendMessage(clientSocketChannel, "<AUTHENTICATION_SUCCESSFUL>");
         Player player = getUnauthenticatedPlayer(clientSocketChannel);
         waitQueue.add(player);
+        player.startWaitTimer();
         unauthenticatedPlayers.remove(player);
     }
 
@@ -267,4 +293,15 @@ public class Server {
     private static synchronized int getAndIncrementGameCount() {
         return ++gameCount;
     }
+
+    public static List<Integer> findEligibleOpponents(Player player, List<Player> Players){
+        List<Integer> eligibleOpponents = new ArrayList<>();
+        for(int i = 0; i < Players.size(); i++){
+            if(abs(Players.get(i).getScore() - player.getScore()) <= ratio * player.getWaitingTime()){
+                eligibleOpponents.add(i);
+            }
+        }
+        return eligibleOpponents;
+    }
 }
+
