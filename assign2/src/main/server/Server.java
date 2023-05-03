@@ -11,19 +11,20 @@ import java.net.*;
 import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Server {
     private static final int PORT = 12345;
-    private static final int MAX_PLAYERS = 3;
-    private static final int MIN_RANGE = 1;
-    private static final int MAX_RANGE = 100;
+    private static final int MAX_PLAYERS = 2;
+    private static final int MAX_GAMES = 10;
     private static final int BUFFER_SIZE = 1024;
 
     private static int playerCount = 0;
     private static List<Player> waitQueue = new ArrayList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
-
+    private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
     private static int gameCount = 0;
 
     public static void main(String[] args) throws IOException {
@@ -79,9 +80,7 @@ public class Server {
             }
 
             // Start a new game if enough players are in the wait queue
-            if (waitQueue.size() >= MAX_PLAYERS) {
-//                int secretNumber = generateSecretNumber();
-
+            if (waitQueue.size() >= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                 //matchmaking
                 List<Player> players = new ArrayList<>();
                 for (int i = 0; i < MAX_PLAYERS; i++) {
@@ -89,16 +88,15 @@ public class Server {
                     players.add(player);
                 }
 
-                Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
-                activeGames.add(game);
-                sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);
+                threadPool.submit(() -> {
+                    Game game = new Game(getAndIncrementGameCount(), players);
+                    activeGames.add(game);
+                    sendMessageToPlayers(game, "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
+                });
             }
         }
     }
 
-    private static int generateSecretNumber() {
-        return new Random().nextInt(MAX_RANGE - MIN_RANGE + 1) + MIN_RANGE;
-    }
 
     private static void handleMessage(SocketChannel clientSocketChannel, String message, MessageType messageType){
 
@@ -138,11 +136,9 @@ public class Server {
             sendMessageToPlayer(player, "Invalid guess");
             return;
         }
-        int distance = Math.abs(game.getSecretNumber() - guess);
-        player.incrementScore(MAX_RANGE/2 - distance);
 
         // Mark the player as having made a guess
-        game.madeGuess(player, distance);
+        game.guess(player, guess);
 
         // End the game if all players have made a guess
         if(game.allPlayersGuessed()){
