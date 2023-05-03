@@ -12,6 +12,11 @@ import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
 
+enum MatchMaking {
+    RANKED,
+    SIMPLE
+}
+
 public class Server {
     private static final int PORT = 12345;
     private static final int MAX_PLAYERS = 3;
@@ -23,7 +28,6 @@ public class Server {
     private static List<Player> waitQueue = new ArrayList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
-
     private static int gameCount = 0;
 
     public static void main(String[] args) throws IOException {
