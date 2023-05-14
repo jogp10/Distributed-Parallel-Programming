@@ -37,13 +37,22 @@ public class Client {
                 System.out.println("Authentication failed. Please try again.");
             }
 
-            message = MessageType.AUTHENTICATION_ATTEMPT.toHeader();
-            System.out.print("Enter your username: ");
-            message += scanner.nextLine();
-            message += ";";
-            System.out.print("Enter your password: ");
-            message += scanner.nextLine();
-            System.out.println(message);
+//            message = MessageType.AUTHENTICATION_ATTEMPT.toHeader();
+            System.out.print("Rejoin queue using token (optional, enter token or leave blank): ");
+            message = scanner.nextLine();
+//            if message is empty, then the user did not enter a token
+//            if message is not empty, use another message type AUTHENTICATION_ATTEMPT_TOKEN
+            if (message.equals("")) {
+                message = MessageType.AUTHENTICATION_ATTEMPT.toHeader();
+                System.out.print("Enter your username: ");
+                message += scanner.nextLine();
+                message += ";";
+                System.out.print("Enter your password: ");
+                message += scanner.nextLine();
+            } else {
+                message = MessageType.AUTHENTICATION_ATTEMPT_TOKEN.toHeader() + message;
+            }
+            System.out.println(message); //todo remove later
             sendMessageToServer(socketChannel, buffer, message);
             receivedMessage = receiveServerMessage(socketChannel, buffer);
         }
@@ -73,14 +82,7 @@ public class Client {
     private static String receiveServerMessage(SocketChannel socketChannel, ByteBuffer buffer) throws IOException {
         String receivedMessage = "";
         buffer.clear();
-//        int bytesRead = socketChannel.read(buffer);
-//        if (bytesRead == -1) {
-//            System.out.println("Disconnected from server");
-//            return null;
-//        } else if (bytesRead > 0) {
-//            buffer.flip();
-//            receivedMessage = new String(buffer.array(), 0, bytesRead);
-//        }
+
         while (true) {
             // attempt to read data from the socket channel
             int bytesRead = socketChannel.read(buffer);

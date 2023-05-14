@@ -51,11 +51,19 @@ public class Server {
 
                     List<List<Integer>> eligibleGame  = new ArrayList<>();
                     //matchmaking
-                    for(Player player : waitQueue) {
+                    Iterator<Player> iterator = waitQueue.iterator();
+                    while (iterator.hasNext()) {
+                        Player player = iterator.next();
+                        if (player.getAbsent()) {
+                            removePlayer(player);
+                            iterator.remove();
+                            continue;
+                        }
                         List<Integer> eligPlayers = findEligibleOpponents(player, waitQueue);
                         eligibleGame.add(eligPlayers);
-
                     }
+
+
                     //Intersect all the lists
                     List<Integer> intersect = eligibleGame.get(0);
                     for(int i = 1; i < eligibleGame.size(); i++) {
@@ -114,27 +122,29 @@ public class Server {
                     catch (SocketException e) {
                         // Handle the "Connection reset" exception
                         System.err.println("Connection reset by peer: " + e.getMessage());
-                        removePlayer(clientSocketChannel);
-//                        clientSocketChannel.close();
+                        key.cancel();
+                        Player player = getPlayerFromQueue(clientSocketChannel);
+                        if(player != null){
+                            suspendPlayer(player);
+                            String username = player.getUsername();
+                            System.err.println("Player " + username + " disconnected");
+
+                        }
+                        else {
+                            removePlayer(clientSocketChannel);
+                        }
                     }
                     catch (IOException e) {
                         // Handle other I/O exceptions
                         e.printStackTrace();
                     }
 
-                    if (bytesRead == -1) {
-                        // main.client.Client has disconnected
-                        removePlayer(clientSocketChannel);
-                    } else {
+                    if (bytesRead != -1) {
                         buffer.flip();
                         String message = new String(buffer.array(), 0, bytesRead);
                         handleMessage(clientSocketChannel, message);
                     }
                 }
-
-
-
-
 
                 /*
                 List<Player> players = new ArrayList<>();
@@ -146,7 +156,6 @@ public class Server {
                 Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
                 activeGames.add(game);
                 sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);*/
-
             }
         }
     }
@@ -160,6 +169,7 @@ public class Server {
         switch (Helper.parseMessageType(message)) {
             case GAME_GUESS -> handleGuessMessage(clientSocketChannel, Helper.parseMessage(message));
             case AUTHENTICATION_ATTEMPT -> handleAuthentication(clientSocketChannel, Helper.parseMessage(message));
+            case AUTHENTICATION_ATTEMPT_TOKEN -> handleAuthenticationToken(clientSocketChannel, Helper.parseMessage(message));
             case DEFAULT ->
                 // Handle invalid message format or unsupported type
                     System.err.println("Invalid message format or unsupported type: " + message);
@@ -167,6 +177,26 @@ public class Server {
 
 
     }
+
+    private static void handleAuthenticationToken(SocketChannel clientSocketChannel, String parseMessage) {
+        String[] tokens = parseMessage.split(";");
+        String sessionToken = tokens[0];
+
+        //iterate waitQueue and find the player with the sessionToken
+        for(Player player : waitQueue) {
+            if(player.getSessionToken().equals(sessionToken)) {
+                unsuspendPLayer(player);
+                player.setSocketChannel(clientSocketChannel);
+                //add player to authenticatedPlayers
+                //send message to player
+                sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue." );
+                return;
+            }
+        }
+
+        //in case the player was not found in the waitQueue
+        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Invalid session token.");
+            }
 
     private static void handleGuessMessage(SocketChannel clientSocketChannel, String message) {
         // Find the player associated with this client socket channel
@@ -224,7 +254,6 @@ public class Server {
     }
 
     private static void handleAuthentication(SocketChannel clientSocketChannel, String parseMessage) {
-        //for now just send back the message, change later
         //split message on ';'
         String[] tokens = parseMessage.split(";");
         String username = tokens[0];
@@ -256,20 +285,25 @@ public class Server {
                     if (Helper.verifyPassword(password, csvPassword)) {
                         sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully logged in.");
                         sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+
                         Player player = getUnauthenticatedPlayer(clientSocketChannel);
                         assert player != null;
                         player.setUsername(username);
                         player.setScore(csvScore);
                         player.setGamesPlayed(csvGamesPlayed);
-                        player.setSessionToken(Helper.generateSessionToken());
+                        String newSessionToken = Helper.generateSessionToken();
+                        player.setSessionToken(newSessionToken);
+                        sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Here is your session token: " + newSessionToken
+                                + "\nPlease use this token to reconnect to the server.");
 
                         waitQueue.add(player);
                         player.startWaitTimer();
                         unauthenticatedPlayers.remove(player);
-                    } else {
+
+                    }
+                    else {
                         // Password incorrect
                         sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Incorrect password. Please try again.");
-
                         sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
                     }
                     return;
@@ -283,13 +317,14 @@ public class Server {
         }
 
 
-        //if user was not in the database
+        //if username was not in the database
         // Add new user to CSV
         try (FileWriter writer = new FileWriter(csvFile, true)) {
 
             String hashedPassword = Helper.hashPassword(password);
+            String newSessionToken = Helper.generateSessionToken();
 
-            String newLine = username + "," + hashedPassword + "," + 0 + "," + 0 + "\n";
+            String newLine = username + "," + hashedPassword + "," + 0 + "," + 0 + "," + newSessionToken + "\n";
             writer.write(newLine);
 
             Player player = getUnauthenticatedPlayer(clientSocketChannel);
@@ -297,24 +332,27 @@ public class Server {
             player.setUsername(username);
             player.setScore(0);
             player.setGamesPlayed(0);
+            player.setSessionToken(newSessionToken);
             waitQueue.add(player);
             player.startWaitTimer();
             unauthenticatedPlayers.remove(player);
 
             sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
-
             sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
 
         } catch (IOException e) {
             System.err.println("Error writing to CSV file: " + e.getMessage());
             sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
         }
-
     }
 
     private static void removePlayer(SocketChannel clientSocketChannel) {
         // Remove the player from the wait queue or active game
         Player player = getPlayer(clientSocketChannel);
+        removePlayer(player);
+    }
+    private static void removePlayer(Player player) {
+        // Remove the player from the wait queue or active game
         if (player != null) {
             waitQueue.remove(player);
             Game game = getGame(player);
@@ -326,6 +364,14 @@ public class Server {
                 }
             }
         }
+    }
+
+    private static void suspendPlayer(Player player){
+        player.setAbsent(true);
+    }
+
+    private static void unsuspendPLayer(Player player){
+        player.setAbsent(false);
     }
 
     private static boolean isLoggedIn(String username){
@@ -359,6 +405,18 @@ public class Server {
         }
         return null;
     }
+
+    private static Player getPlayerFromQueue(SocketChannel clientSocketChannel) {
+        for (Player player : waitQueue) {
+            if (player.getSocketChannel() == clientSocketChannel) {
+                return player;
+            }
+        }
+        return null;
+    }
+
+
+
  private static Player getUnauthenticatedPlayer(SocketChannel clientSocketChannel) {
         for (Player player : unauthenticatedPlayers) {
             if (player.getSocketChannel() == clientSocketChannel) {

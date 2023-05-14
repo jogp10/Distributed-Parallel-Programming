@@ -1,5 +1,7 @@
 package main.game;
 
+import main.utils.Helper;
+
 import java.nio.channels.*;
 import java.util.Objects;
 import java.util.Timer;
@@ -12,6 +14,7 @@ public class Player {
     private String sessionToken;
     private int gamesPlayed;
     boolean guessed = false;
+    boolean absent = false;
     private SocketChannel socketChannel;
     private Timer waitTimer;
     private int waitingTime = 0;
@@ -54,6 +57,10 @@ public class Player {
         return socketChannel;
     }
 
+    public void setSocketChannel(SocketChannel socketChannel) {
+        this.socketChannel = socketChannel;
+    }
+
     public void setScore(int score) {
         this.score = score;
     }
@@ -69,6 +76,14 @@ public class Player {
 
     public int getGamesPlayed() {
         return this.gamesPlayed;
+    }
+
+    public void setAbsent(boolean b) {
+        absent = b;
+    }
+
+    public boolean getAbsent() {
+        return absent;
     }
 
     @Override
