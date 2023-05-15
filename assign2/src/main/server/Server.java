@@ -55,8 +55,8 @@ public class Server {
                     while (iterator.hasNext()) {
                         Player player = iterator.next();
                         if (player.getAbsent()) {
-                            removePlayer(player);
                             iterator.remove();
+                            removePlayerNotInQueue(player); //maybe this is not even needed
                             continue;
                         }
                         List<Integer> eligPlayers = findEligibleOpponents(player, waitQueue);
@@ -249,6 +249,7 @@ public class Server {
 
         for (Player p : game.getPlayers()) {
             sendMessageToPlayer(p, "Your score is " + p.getScore());
+            p.startWaitTimer();
             waitQueue.add(p);
         }
     }
@@ -355,6 +356,19 @@ public class Server {
         // Remove the player from the wait queue or active game
         if (player != null) {
             waitQueue.remove(player);
+            Game game = getGame(player);
+            if (game != null) {
+                game.removePlayer(player);
+                sendMessageToPlayers(game, "Player " + player.getUsername() + " has left the game");
+                if (game.getPlayers().isEmpty()) {
+                    activeGames.remove(game);
+                }
+            }
+        }
+    }
+
+    private static void removePlayerNotInQueue(Player player){
+        if (player != null) {
             Game game = getGame(player);
             if (game != null) {
                 game.removePlayer(player);
