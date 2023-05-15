@@ -1,8 +1,9 @@
 package main.game;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Game {
     private final int id;
@@ -11,7 +12,10 @@ public class Game {
     private static final int MAX_RANGE = 100;
     private static final int MIN_RANGE = 1;
 
+    private static ExecutorService threadPoolPlayers;
+
     private int[] distances;
+    private int[] guesses;
     private boolean isOver;
 
     public Game(int id, List<Player> players) {
@@ -19,12 +23,15 @@ public class Game {
         this.secretNumber = generateSecretNumber();
         this.players = players;
         this.distances = new int[players.size()];
+        this.guesses = new int[players.size()];
         this.isOver = false;
+        threadPoolPlayers = Executors.newFixedThreadPool(players.size());
     }
 
     public int getId() {
         return id;
     }
+
     private static int generateSecretNumber() {
         return new Random().nextInt(MAX_RANGE - MIN_RANGE + 1) + MIN_RANGE;
     }
@@ -50,26 +57,28 @@ public class Game {
     }
 
     public void start() {
-        while (!isOver) {
-            for (Player player : players) {
-                if (isOver) {
-                    break;
-                }
-                int guess = player.makeGuess();
-                if (guess == secretNumber) {
-                    player.incrementScore(100);
-                } else {
-                    int distance = Math.abs(guess - secretNumber);
-                    int points = 50 - distance;
-                    player.incrementScore(points);
-                }
+        messageToPlayers("Game started! Guess a number between " + getMinRange() + " and " + getMaxRange());
 
-                if (allPlayersGuessed()) {
-                    isOver = true;
+        for (Player player : players) {
+            threadPoolPlayers.execute(() -> {
+                while (!isOver && !player.getGuessed()) {
+                    player.receiveMessage("Make a guess: ");
+                    int guess = player.makeGuess();
+                    guess(player, guess);
+
+                    if (allPlayersGuessed()) {
+                        isOver = true;
+                    }
                 }
-            }
+            });
         }
         gameOver();
+    }
+
+    private void messageToPlayers(String s) {
+        for (Player player : players) {
+            player.receiveMessage(s);
+        }
     }
 
     public boolean allPlayersGuessed() {
@@ -92,15 +101,15 @@ public class Game {
     }
 
     public void guess(Player player, int guess) {
-        player.setGuessed(true);
-
         int distance = Math.abs(getSecretNumber() - guess);
-        player.incrementScore(MAX_RANGE/2 - distance);
+        player.setGuessed(true);
+        player.updateScore(MAX_RANGE / 2 - distance);
 
-        for (int i=0; i<players.size(); i++) {
+        for (int i = 0; i < players.size(); i++) {
             Player p = players.get(i);
             if (player.getId() == p.getId()) {
                 this.distances[i] = distance;
+                this.guesses[i] = guess;
             }
         }
     }
@@ -115,8 +124,15 @@ public class Game {
     }
 
     public void gameOver() {
+        messageToPlayers("All players have made a guess! The secret number was " + getSecretNumber());
         // Notify players that the game is over
-        for (Player player : players) {
+        for (int i=0; i< players.size(); i++) {
+            Player player = players.get(i);
+            if (guesses[i] == getSecretNumber()) {
+                player.receiveMessage("You guessed the secret number!");
+                messageToPlayers("Player " + player.getUsername() + " guessed the secret number!");
+            }
+            player.receiveMessage("Your guess was " + getDistance(player) + " away from the secret number");
             player.notifyGameOver();
         }
     }

@@ -1,9 +1,13 @@
 package main.game;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
+
+import static main.utils.Helper.MESSAGE_TERMINATOR;
 
 public class Player {
     private final int id;
@@ -12,10 +16,12 @@ public class Player {
     private String sessionToken;
     private int gamesPlayed;
     boolean guessed = false;
+    boolean absent = false;
     private SocketChannel socketChannel;
     private Timer waitTimer;
     private int waitingTime = 0;
     private boolean inQueue = false;
+    private boolean authenticated = false;
 
     public Player(int id, SocketChannel socketChannel) {
         this.id = id;
@@ -54,11 +60,15 @@ public class Player {
         return socketChannel;
     }
 
+    public void setSocketChannel(SocketChannel socketChannel) {
+        this.socketChannel = socketChannel;
+    }
+
     public void setScore(int score) {
         this.score = score;
     }
 
-    public void incrementScore(int points) {
+    public void updateScore(int points) {
         this.score += points;
         if (this.score < 0) this.score = 0;
     }
@@ -69,6 +79,14 @@ public class Player {
 
     public int getGamesPlayed() {
         return this.gamesPlayed;
+    }
+
+    public void setAbsent(boolean b) {
+        absent = b;
+    }
+
+    public boolean getAbsent() {
+        return absent;
     }
 
     @Override
@@ -147,6 +165,14 @@ public class Player {
         return inQueue;
     }
 
+    public void setAuthenticated(boolean authenticated) {
+        this.authenticated = authenticated;
+    }
+
+    public boolean isAuthenticated() {
+        return authenticated;
+    }
+
 
     public void notifyGameOver() {
         // TODO Auto-generated method stub
@@ -154,11 +180,64 @@ public class Player {
     }
 
     public int makeGuess() {
-        // TODO Auto-generated method stub
+        // Read the guess from the player
+        ByteBuffer buffer = ByteBuffer.allocate(1024);
+        buffer = ByteBuffer.allocate(1024);
+        try {
+            socketChannel.read(buffer);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        buffer.flip();
+        String guess = new String(buffer.array()).trim();
+        int number = Integer.parseInt(guess);
+
+        // Mark the player as having guessed
         this.setGuessed(true);
-        return 0;
+
+        return number;
     }
 
 
-}
 
+    public void receiveMessage(String message) {
+        System.out.println("Sent message to player " + getUsername() + ": " + message);
+        if (message.equals("startWaitingTimer")) {
+            startWaitTimer();
+        } else if (message.equals("stopWaitingTimer")) {
+            stopWaitTimer();
+        } else if (message.equals("Make a guess: ")) {
+            // Send the message to the player
+            ByteBuffer buffer = ByteBuffer.allocate(1024);
+            buffer.put(message.getBytes());
+            buffer.put((byte) MESSAGE_TERMINATOR);
+            buffer.flip();
+            try {
+                socketChannel.write(buffer);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            // TODO: Handle other message types
+            // Output the message to the player
+
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "Player{" +
+                "id=" + id +
+                ", score=" + score +
+                ", username='" + username + '\'' +
+                ", sessionToken='" + sessionToken + '\'' +
+                ", gamesPlayed=" + gamesPlayed +
+                ", guessed=" + guessed +
+                ", socketChannel=" + socketChannel +
+                ", waitTimer=" + waitTimer +
+                ", waitingTime=" + waitingTime +
+                ", inQueue=" + inQueue +
+                ", authenticated=" + authenticated +
+                '}';
+    }
+}

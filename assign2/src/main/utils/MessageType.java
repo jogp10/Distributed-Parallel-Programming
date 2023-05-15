@@ -6,6 +6,8 @@ public enum MessageType {
     AUTHENTICATION_SUCCESSFUL, // server to client
     AUTHENTICATION_FAILURE, // server to client
     AUTHENTICATION_ATTEMPT, //client to server
+    AUTHENTICATION_ATTEMPT_TOKEN, //client to server
+
     GAME_GUESS,
     DISCONNECT,
     KEEP_ALIVE,
