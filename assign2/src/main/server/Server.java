@@ -285,7 +285,7 @@ public class Server {
                 if (csvUsername.equals(username)) {
                     if (Helper.verifyPassword(password, csvPassword)) {
                         sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully logged in.");
-                        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+                        //sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
 
                         Player player = getUnauthenticatedPlayer(clientSocketChannel);
                         assert player != null;
@@ -339,7 +339,7 @@ public class Server {
             unauthenticatedPlayers.remove(player);
 
             sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
-            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+            //sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
 
         } catch (IOException e) {
             System.err.println("Error writing to CSV file: " + e.getMessage());
