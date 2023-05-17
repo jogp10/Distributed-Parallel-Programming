@@ -54,19 +54,13 @@ public class Server {
 
         new Thread(() -> {
             while (true) {
-                // Console log players in queue
-                for(Player player : normalQueue) {
-                    System.out.println(player.getUsername() + " is in the normal queue");
-                }
-                for(Player player : rankedQueue) {
-                    System.out.println(player.getUsername() + " is in the ranked queue");
-                }
+
                 // Start a new game if enough players are in the wait queue
-                if (normalQueue.size() >= MAX_PLAYERS) {
+                if (rankedQueue.size() >= MAX_PLAYERS) {
 
                     List<List<Integer>> eligibleGame  = new ArrayList<>();
                     //matchmaking
-                    Iterator<Player> iterator = normalQueue.iterator();
+                    Iterator<Player> iterator = rankedQueue.iterator();
                     while (iterator.hasNext()) {
                         Player player = iterator.next();
                         if (player.getAbsent()) {
@@ -74,7 +68,7 @@ public class Server {
                             iterator.remove();
                             continue;
                         }
-                        List<Integer> eligPlayers = findEligibleOpponents(player, normalQueue);
+                        List<Integer> eligPlayers = findEligibleOpponents(player, rankedQueue);
                         eligibleGame.add(eligPlayers);
                     }
 
@@ -89,8 +83,9 @@ public class Server {
                         System.out.println("Creating a new game with players: " + intersect);
                         int game_id = findFirst(active_games, 0);
                         List<Player> players = new ArrayList<>();
-                        for (int i = 0; i < MAX_PLAYERS; i++) {
-                            Player player = normalQueue.remove(intersect.get(i)-i);
+                        for (int i = intersect.size() - 1; i >= 0; i--) {
+                            System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
+                            Player player = rankedQueue.remove(i);
                             players.add(player);
                             player.stopWaitTimer();
                             player.setInGame(true);
@@ -105,6 +100,26 @@ public class Server {
 
                         });
                     }
+                }
+
+                if (normalQueue.size() >= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
+                    System.out.println("Creating a new game with players: " + normalQueue);
+                    List<Player> players = new ArrayList<>();
+                    for (int i = 0; i < MAX_PLAYERS; i++) {
+                        Player player = normalQueue.remove(0);
+                        players.add(player);
+                        player.stopWaitTimer();
+                        player.setInGame(true);
+                    }
+
+                    threadPool.submit(() -> {
+                        Game game = new Game(getAndIncrementGameCount(), players);
+                        activeGames.add(game);
+
+                        sendMessageToPlayers(game, GAME_GUESS_REQUEST.toHeader() +
+                                "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
+
+                    });
                 }
 
                 // Sleep for some time to avoid high CPU usage
@@ -209,7 +224,7 @@ public class Server {
             }
         }
         else if(parseMessage.equals("2")) {
-            Player player = getPlayerFromQueue(clientSocketChannel);
+            Player player = getUnauthenticatedPlayer(clientSocketChannel);
             unauthenticatedPlayers.remove(player);
             if(player != null) {
                 rankedQueue.add(player);
@@ -228,6 +243,16 @@ public class Server {
 
         //iterate waitQueue and find the player with the sessionToken
         for(Player player : normalQueue) {
+            if(player.getSessionToken().equals(sessionToken)) {
+                unsuspendPLayer(player);
+                player.setSocketChannel(clientSocketChannel);
+                //add player to authenticatedPlayers
+                //send message to player
+                sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue." );
+                return;
+            }
+        }
+        for(Player player : rankedQueue) {
             if(player.getSessionToken().equals(sessionToken)) {
                 unsuspendPLayer(player);
                 player.setSocketChannel(clientSocketChannel);
@@ -391,12 +416,17 @@ public class Server {
             player.setScore(0);
             player.setGamesPlayed(0);
             player.setSessionToken(newSessionToken);
-            normalQueue.add(player);
-            player.startWaitTimer();
-            unauthenticatedPlayers.remove(player);
+
 
             sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
             sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+            player.startWaitTimer();
+
+            // Choose matchmaking
+            sendMessageToPlayer(player, MessageType.GAME_MODE_REQUEST.toHeader() + "Please choose a matchmaking option: \n" +
+                    "1. Normal\n" +
+                    "2. Ranked\n"
+            );
 
         } catch (IOException e) {
             System.err.println("Error writing to CSV file: " + e.getMessage());
@@ -412,7 +442,9 @@ public class Server {
     private static void removePlayer(Player player) {
         // Remove the player from the wait queue or active game
         if (player != null) {
+            // remove from normal queue or ranked queue
             normalQueue.remove(player);
+            rankedQueue.remove(player);
             Game game = getGame(player);
             if (game != null) {
                 game.removePlayer(player);
@@ -438,6 +470,11 @@ public class Server {
                 return true;
             }
         }
+        for(Player player: rankedQueue){
+            if (player.getUsername().equalsIgnoreCase(username)){
+                return true;
+            }
+        }
         for (Game game: activeGames){
             for (Player player: game.getPlayers()){
                 if (player.getUsername().equalsIgnoreCase(username)){
@@ -450,6 +487,11 @@ public class Server {
 
     private static Player getPlayer(SocketChannel clientSocketChannel) {
         for (Player player : normalQueue) {
+            if (player.getSocketChannel() == clientSocketChannel) {
+                return player;
+            }
+        }
+        for (Player player : rankedQueue) {
             if (player.getSocketChannel() == clientSocketChannel) {
                 return player;
             }
