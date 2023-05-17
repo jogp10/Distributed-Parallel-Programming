@@ -17,7 +17,11 @@ import java.util.concurrent.Executors;
 import static main.utils.Helper.MESSAGE_TERMINATOR;
 
 import static java.lang.Math.abs;
+
 import static main.utils.MessageType.*;
+
+import static main.utils.Helper.findFirst;
+
 
 
 public class Server {
@@ -31,7 +35,9 @@ public class Server {
     private static List<Player> rankedQueue = new ArrayList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
+    private static int[] active_games = new int[MAX_GAMES];
     private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
+    private static final List<ExecutorService> threadPoolPlayers = new ArrayList<ExecutorService>(Collections.nCopies(MAX_GAMES, Executors.newFixedThreadPool(MAX_PLAYERS)));
     private static int gameCount = 0;
     private static double ratio = 10;
 
@@ -81,11 +87,13 @@ public class Server {
                     //Create a new game with the intersected players
                     if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                         System.out.println("Creating a new game with players: " + intersect);
+                        int game_id = findFirst(active_games, 0);
                         List<Player> players = new ArrayList<>();
                         for (int i = 0; i < MAX_PLAYERS; i++) {
-                            Player player = normalQueue.remove(0);
+                            Player player = normalQueue.remove(intersect.get(i)-i);
                             players.add(player);
                             player.stopWaitTimer();
+                            player.setInGame(true);
                         }
 
                         threadPool.submit(() -> {
@@ -94,11 +102,12 @@ public class Server {
 
                             sendMessageToPlayers(game, GAME_GUESS_REQUEST.toHeader() +
                                     "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
+
                         });
                     }
                 }
 
-                    // Sleep for some time to avoid high CPU usage
+                // Sleep for some time to avoid high CPU usage
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
@@ -140,7 +149,6 @@ public class Server {
                             suspendPlayer(player);
                             String username = player.getUsername();
                             System.err.println("Player " + username + " disconnected");
-
                         }
                         else {
                             removePlayer(clientSocketChannel);
@@ -174,7 +182,9 @@ public class Server {
 
 
 
-    private static void handleMessage(SocketChannel clientSocketChannel, String message) {
+
+    public static void handleMessage(SocketChannel clientSocketChannel, String message) {
+
 
         switch (Helper.parseMessageType(message)) {
             case GAME_GUESS -> handleGuessMessage(clientSocketChannel, Helper.parseMessage(message));
@@ -232,7 +242,7 @@ public class Server {
         sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Invalid session token.");
     }
 
-    private static void handleGuessMessage(SocketChannel clientSocketChannel, String message) {
+    public static void handleGuessMessage(SocketChannel clientSocketChannel, String message) {
         // Find the player associated with this client socket channel
         Player player = getPlayer(clientSocketChannel);
         if (player == null) {
@@ -249,6 +259,10 @@ public class Server {
         int guess;
         try {
             guess = Integer.parseInt(message.trim());
+            if (guess < game.getMinRange() || guess > game.getMaxRange()) {
+                sendMessageToPlayer(player, "Guess out of range, try again between " + game.getMinRange() + " and " + game.getMaxRange());
+                return;
+            }
         }
         catch (NumberFormatException e) {
             sendMessageToPlayer(player, "Invalid guess");
@@ -283,7 +297,11 @@ public class Server {
 
         for (Player p : game.getPlayers()) {
             sendMessageToPlayer(p, "Your score is " + p.getScore());
+
             normalQueue.add(p);
+
+            p.startWaitTimer();
+
         }
     }
 
@@ -328,7 +346,7 @@ public class Server {
                         String newSessionToken = Helper.generateSessionToken();
                         player.setSessionToken(newSessionToken);
                         sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Here is your session token: " + newSessionToken
-                                + "\nPlease use this token to reconnect to the server.");
+                                + "\n\tPlease use this token to reconnect to the server.");
 
 
                         player.startWaitTimer();
@@ -462,7 +480,7 @@ public class Server {
 
 
 
- private static Player getUnauthenticatedPlayer(SocketChannel clientSocketChannel) {
+    private static Player getUnauthenticatedPlayer(SocketChannel clientSocketChannel) {
         for (Player player : unauthenticatedPlayers) {
             if (player.getSocketChannel() == clientSocketChannel) {
                 return player;
@@ -471,7 +489,7 @@ public class Server {
         return null;
     }
 
-    private static Game getGame(Player player) {
+    public static Game getGame(Player player) {
         for (Game game : activeGames) {
             if (game.getPlayers().contains(player)) {
                 return game;
@@ -480,13 +498,14 @@ public class Server {
         return null;
     }
 
-    private static void sendMessageToPlayers(Game game, String message) {
+    public static void sendMessageToPlayers(Game game, String message) {
+        System.out.println("Sending message to players: " + message);
         for (Player player : game.getPlayers()) {
             sendMessage(player.getSocketChannel(), message);
         }
     }
 
-    private static void sendMessage(SocketChannel clientSocketChannel, String message) {
+    public static void sendMessage(SocketChannel clientSocketChannel, String message) {
         try {
             message += MESSAGE_TERMINATOR;
             ByteBuffer buffer = ByteBuffer.wrap(message.getBytes());
@@ -504,6 +523,7 @@ public class Server {
     }
 
     private static void sendMessageToPlayer(Player player, String message) {
+        System.out.println("Sending message to player " + player.getUsername() + ": " + message);
         sendMessage(player.getSocketChannel(), message);
     }
 

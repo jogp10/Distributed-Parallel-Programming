@@ -1,11 +1,13 @@
 package main.game;
 
-import main.utils.Helper;
-
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
+
+import static main.utils.Helper.MESSAGE_TERMINATOR;
 
 public class Player {
     private final int id;
@@ -19,6 +21,8 @@ public class Player {
     private Timer waitTimer;
     private int waitingTime = 0;
     private boolean inQueue = false;
+    private boolean inGame = false;
+    private boolean authenticated = false;
 
     public Player(int id, SocketChannel socketChannel) {
         this.id = id;
@@ -65,7 +69,7 @@ public class Player {
         this.score = score;
     }
 
-    public void incrementScore(int points) {
+    public void updateScore(int points) {
         this.score += points;
         if (this.score < 0) this.score = 0;
     }
@@ -135,7 +139,7 @@ public class Player {
 
     public void startWaitTimer() {
         waitTimer = new Timer();
-        inQueue = true;
+        setInQueue(true);
         waitTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -150,16 +154,35 @@ public class Player {
             waitTimer.cancel();
             waitTimer = null;
         }
-        inQueue = false;
-        waitingTime = 0;
+        setInQueue(false);
     }
 
     public int getWaitingTime() {
         return waitingTime;
     }
 
+    public void setInQueue(boolean inQueue) {
+        this.inQueue = inQueue;
+        waitingTime = 0;
+    }
+
     public boolean isInQueue() {
         return inQueue;
+    }
+
+    public void setInGame(boolean inGame) {
+        this.inGame = inGame;
+    }
+    public boolean isInGame() {
+        return inGame;
+    }
+
+    public void setAuthenticated(boolean authenticated) {
+        this.authenticated = authenticated;
+    }
+
+    public boolean isAuthenticated() {
+        return authenticated;
     }
 
 
@@ -169,11 +192,66 @@ public class Player {
     }
 
     public int makeGuess() {
-        // TODO Auto-generated method stub
+        // Read the guess from the player
+        ByteBuffer buffer = ByteBuffer.allocate(1024);
+        buffer = ByteBuffer.allocate(1024);
+        try {
+            socketChannel.read(buffer);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        buffer.flip();
+        String guess = new String(buffer.array()).trim();
+        int number = Integer.parseInt(guess);
+
+        // Mark the player as having guessed
         this.setGuessed(true);
-        return 0;
+
+        return number;
     }
 
 
-}
 
+    public void receiveMessage(String message) {
+        System.out.println("Sent message to player " + getUsername() + ": " + message);
+        if (message.equals("startWaitingTimer")) {
+            startWaitTimer();
+        } else if (message.equals("stopWaitingTimer")) {
+            stopWaitTimer();
+        } else if (message.equals("Make a guess: ")) {
+            setInGame(true);
+
+            // Send the message to the player
+            ByteBuffer buffer = ByteBuffer.allocate(1024);
+            buffer.put(message.getBytes());
+            buffer.put((byte) MESSAGE_TERMINATOR);
+            buffer.flip();
+            try {
+                socketChannel.write(buffer);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            // TODO: Handle other message types
+            // Output the message to the player
+
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "Player{" +
+                "id=" + id +
+                ", score=" + score +
+                ", username='" + username + '\'' +
+                ", sessionToken='" + sessionToken + '\'' +
+                ", gamesPlayed=" + gamesPlayed +
+                ", guessed=" + guessed +
+                ", socketChannel=" + socketChannel +
+                ", waitTimer=" + waitTimer +
+                ", waitingTime=" + waitingTime +
+                ", inQueue=" + inQueue +
+                ", authenticated=" + authenticated +
+                '}';
+    }
+}
