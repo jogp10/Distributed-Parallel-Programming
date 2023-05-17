@@ -1,9 +1,10 @@
 package main.game;
 
+import main.server.Server;
+
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class Game {
     private final int id;
@@ -58,32 +59,23 @@ public class Game {
     public void start(ExecutorService executorService) {
         threadPoolPlayers = executorService;
 
-        messageToPlayers("Game started! Guess a number between " + getMinRange() + " and " + getMaxRange());
+        Server.sendMessageToPlayers(this, "Game started! Guess a number between " + getMinRange() + " and " + getMaxRange());
 
         for (Player player : players) {
             threadPoolPlayers.execute(() -> {
                 while (!isOver && !player.getGuessed()) {
-                    messageToPlayer(player, "Make a guess: ");
+                    Server.sendMessageToPlayer(player, "Make a guess: ");
                     int guess = player.makeGuess();
                     guess(player, guess);
 
                     if (allPlayersGuessed()) {
                         isOver = true;
+                        break;
                     }
                 }
             });
         }
         gameOver();
-    }
-
-    private void messageToPlayers(String s) {
-        for (Player player : players) {
-            player.receiveMessage(s);
-        }
-    }
-
-    private void messageToPlayer(Player p, String s) {
-        p.receiveMessage(s);
     }
 
     public boolean allPlayersGuessed() {
@@ -95,20 +87,10 @@ public class Game {
         return true;
     }
 
-    public void madeGuess(Player player, int distance) {
-        player.setGuessed(true);
-        for (int i=0; i<players.size(); i++) {
-            Player p = players.get(i);
-            if (player.getId() == p.getId()) {
-                this.distances[i] = distance;
-            }
-        }
-    }
-
     public void guess(Player player, int guess) {
         int distance = Math.abs(getSecretNumber() - guess);
         player.setGuessed(true);
-        player.updateScore(MAX_RANGE / 2 - distance);
+        player.updateScore(distance != 0 ? MAX_RANGE / 2 - distance : 100);
 
         for (int i = 0; i < players.size(); i++) {
             Player p = players.get(i);
@@ -129,17 +111,16 @@ public class Game {
     }
 
     public void gameOver() {
-        messageToPlayers("All players have made a guess! The secret number was " + getSecretNumber());
+        Server.sendMessageToPlayers(this, "All players have made a guess! The secret number was " + getSecretNumber());
         // Notify players that the game is over
         for (int i=0; i< players.size(); i++) {
             Player player = players.get(i);
             if (guesses[i] == getSecretNumber()) {
-                messageToPlayer(player, "You guessed the secret number!");
-                messageToPlayers("Player " + player.getUsername() + " guessed the secret number!");
+                Server.sendMessageToPlayer(player, "You guessed the secret number!");
+                Server.sendMessageToPlayers(this, "Player " + player.getUsername() + " guessed the secret number!");
             }
-            messageToPlayer(player, "Your guess was " + getDistance(player) + " away from the secret number");
+            Server.sendMessageToPlayer(player, "Your guess was " + getDistance(player) + " away from the secret number");
             player.notifyGameOver();
-            player.setInGame(false);
         }
     }
 

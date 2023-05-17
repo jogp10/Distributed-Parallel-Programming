@@ -32,7 +32,7 @@ public class Server {
     private static List<Game> activeGames = new ArrayList<>();
     private static int[] active_games = new int[MAX_GAMES];
     private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
-    private static final List<ExecutorService> threadPoolPlayers = new ArrayList<ExecutorService>(Collections.nCopies(MAX_GAMES, Executors.newFixedThreadPool(MAX_PLAYERS)));
+    private static final List<ExecutorService> threadPoolPlayers = new ArrayList<>(Collections.nCopies(MAX_GAMES, Executors.newFixedThreadPool(MAX_PLAYERS)));
     private static int gameCount = 0;
     private static double ratio = 10;
 
@@ -80,8 +80,7 @@ public class Server {
                         for (int i = 0; i < MAX_PLAYERS; i++) {
                             Player player = waitQueue.remove(intersect.get(i)-i);
                             players.add(player);
-                            player.stopWaitTimer();
-                            player.setInGame(true);
+                            player.notifyGameStart();
                         }
 
                         threadPool.submit(() -> {
@@ -150,17 +149,6 @@ public class Server {
                         handleMessage(clientSocketChannel, message);
                     }
                 }
-
-                /*
-                List<Player> players = new ArrayList<>();
-                for (int i = 0; i < MAX_PLAYERS; i++) {
-                    Player player = waitQueue.remove(0);
-                    players.add(player);
-                }
-
-                Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
-                activeGames.add(game);
-                sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);*/
             }
         }
     }
@@ -235,17 +223,6 @@ public class Server {
 
         // End the game if all players have made a guess
         if(game.allPlayersGuessed()){
-            sendMessageToPlayers(game, "All players have made a guess! The secret number was " + game.getSecretNumber());
-
-            if (guess == game.getSecretNumber()) {
-                sendMessageToPlayer(player, "You guessed the secret number!");
-                sendMessageToPlayers(game, "Player " + player.getUsername() + " guessed the secret number!");
-            } else {
-                for (Player p : game.getPlayers()) {
-                    sendMessageToPlayer(p, "Your guess was " + game.getDistance(p) + " away from the secret number");
-                }
-            }
-
             endGame(game);
         } else {
             sendMessageToPlayer(player, "Waiting for other players to guess...");
@@ -469,7 +446,7 @@ public class Server {
         }
     }
 
-    private static void sendMessageToPlayer(Player player, String message) {
+    public static void sendMessageToPlayer(Player player, String message) {
         System.out.println("Sending message to player " + player.getUsername() + ": " + message);
         sendMessage(player.getSocketChannel(), message);
     }

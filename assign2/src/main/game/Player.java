@@ -187,8 +187,15 @@ public class Player {
 
 
     public void notifyGameOver() {
-        // TODO Auto-generated method stub
         this.setGuessed(false);
+        this.setInGame(false);
+        this.gamesPlayed++;
+    }
+
+    public void notifyGameStart() {
+        this.stopWaitTimer();
+        this.setGuessed(false);
+        this.setInGame(true);
     }
 
     public int makeGuess() {
