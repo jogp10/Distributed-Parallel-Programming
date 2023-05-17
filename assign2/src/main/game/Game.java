@@ -25,7 +25,6 @@ public class Game {
         this.distances = new int[players.size()];
         this.guesses = new int[players.size()];
         this.isOver = false;
-        threadPoolPlayers = Executors.newFixedThreadPool(players.size());
     }
 
     public int getId() {
@@ -56,7 +55,9 @@ public class Game {
         players.remove(player);
     }
 
-    public void start() {
+    public void start(ExecutorService executorService) {
+        threadPoolPlayers = executorService;
+
         messageToPlayers("Game started! Guess a number between " + getMinRange() + " and " + getMaxRange());
 
         for (Player player : players) {
