@@ -75,6 +75,7 @@ public class Game {
                 }
             });
         }
+        while (!allPlayersGuessed()) {};
         gameOver();
     }
 

@@ -231,7 +231,7 @@ public class Server {
 
     private static void endGame(Game game) {
         activeGames.remove(game);
-        game.gameOver();
+        game.gameOver(); // remove when game handles messages
 
         for (Player p : game.getPlayers()) {
             sendMessageToPlayer(p, "Your score is " + p.getScore());
