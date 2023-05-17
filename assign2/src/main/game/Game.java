@@ -82,6 +82,10 @@ public class Game {
         }
     }
 
+    private void messageToPlayer(Player p, String s) {
+        p.receiveMessage(s);
+    }
+
     public boolean allPlayersGuessed() {
         for (Player player : players) {
             if (!player.getGuessed()) {
@@ -130,10 +134,10 @@ public class Game {
         for (int i=0; i< players.size(); i++) {
             Player player = players.get(i);
             if (guesses[i] == getSecretNumber()) {
-                player.receiveMessage("You guessed the secret number!");
+                messageToPlayer(player, "You guessed the secret number!");
                 messageToPlayers("Player " + player.getUsername() + " guessed the secret number!");
             }
-            player.receiveMessage("Your guess was " + getDistance(player) + " away from the secret number");
+            messageToPlayer(player, "Your guess was " + getDistance(player) + " away from the secret number");
             player.notifyGameOver();
         }
     }
