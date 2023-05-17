@@ -63,7 +63,7 @@ public class Game {
         for (Player player : players) {
             threadPoolPlayers.execute(() -> {
                 while (!isOver && !player.getGuessed()) {
-                    player.receiveMessage("Make a guess: ");
+                    messageToPlayer(player, "Make a guess: ");
                     int guess = player.makeGuess();
                     guess(player, guess);
 
@@ -139,6 +139,7 @@ public class Game {
             }
             messageToPlayer(player, "Your guess was " + getDistance(player) + " away from the secret number");
             player.notifyGameOver();
+            player.setInGame(false);
         }
     }
 

@@ -21,6 +21,7 @@ public class Player {
     private Timer waitTimer;
     private int waitingTime = 0;
     private boolean inQueue = false;
+    private boolean inGame = false;
     private boolean authenticated = false;
 
     public Player(int id, SocketChannel socketChannel) {
@@ -138,7 +139,7 @@ public class Player {
 
     public void startWaitTimer() {
         waitTimer = new Timer();
-        inQueue = true;
+        setInQueue(true);
         waitTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -153,16 +154,27 @@ public class Player {
             waitTimer.cancel();
             waitTimer = null;
         }
-        inQueue = false;
-        waitingTime = 0;
+        setInQueue(false);
     }
 
     public int getWaitingTime() {
         return waitingTime;
     }
 
+    public void setInQueue(boolean inQueue) {
+        this.inQueue = inQueue;
+        waitingTime = 0;
+    }
+
     public boolean isInQueue() {
         return inQueue;
+    }
+
+    public void setInGame(boolean inGame) {
+        this.inGame = inGame;
+    }
+    public boolean isInGame() {
+        return inGame;
     }
 
     public void setAuthenticated(boolean authenticated) {
@@ -207,6 +219,8 @@ public class Player {
         } else if (message.equals("stopWaitingTimer")) {
             stopWaitTimer();
         } else if (message.equals("Make a guess: ")) {
+            setInGame(true);
+
             // Send the message to the player
             ByteBuffer buffer = ByteBuffer.allocate(1024);
             buffer.put(message.getBytes());

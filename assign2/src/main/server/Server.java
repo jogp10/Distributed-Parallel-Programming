@@ -78,15 +78,16 @@ public class Server {
                         int game_id = findFirst(active_games, 0);
                         List<Player> players = new ArrayList<>();
                         for (int i = 0; i < MAX_PLAYERS; i++) {
-                            Player player = waitQueue.remove(intersect.get(i).intValue());
+                            Player player = waitQueue.remove(intersect.get(i)-i);
                             players.add(player);
                             player.stopWaitTimer();
+                            player.setInGame(true);
                         }
 
                         threadPool.submit(() -> {
                             Game game = new Game(getAndIncrementGameCount(), players);
                             activeGames.add(game);
-                            game.start(threadPoolPlayers.get(game_id));
+                            //game.start(threadPoolPlayers.get(game_id));
                             sendMessageToPlayers(game, "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
                         });
                     }
