@@ -9,6 +9,7 @@ import java.nio.channels.*;
 import java.util.*;
 
 import static main.utils.Helper.MESSAGE_TERMINATOR;
+import static main.utils.MessageType.GAME_MODE_RESPONSE;
 
 public class Client {
     private static final String SERVER_IP = "localhost";
@@ -58,13 +59,27 @@ public class Client {
         }
 
         while (!receivedMessage.equals("exit")) {
+
+            message = "";
             receivedMessage = receiveServerMessage(socketChannel, buffer);
-            message = MessageType.GAME_GUESS.toHeader();
-            if (receivedMessage.equals("Game started! Guess a number between 1 and 100")) {
-                System.out.print("Enter your guess: ");
-                message += scanner.nextLine();
-                sendMessageToServer(socketChannel, buffer, message);
+
+
+            switch (Helper.parseMessageType(receivedMessage)){
+                case GAME_MODE_REQUEST:
+                    System.out.print("Enter your game mode: ");
+                    message = GAME_MODE_RESPONSE.toHeader();
+                    message += scanner.nextLine();
+                    break;
+                case GAME_GUESS_REQUEST:
+                    System.out.print("Enter your guess: ");
+                    message = MessageType.GAME_GUESS.toHeader();
+                    message += scanner.nextLine();
+                    break;
+
             }
+
+            sendMessageToServer(socketChannel, buffer, message);
+
         }
 
         socketChannel.close();
