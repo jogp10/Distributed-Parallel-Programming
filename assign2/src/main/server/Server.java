@@ -13,6 +13,8 @@ import java.nio.channels.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static main.utils.Helper.MESSAGE_TERMINATOR;
 
@@ -35,9 +37,10 @@ public class Server {
     private static List<Player> rankedQueue = new ArrayList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
-    private static int[] active_games = new int[MAX_GAMES];
+    private static Lock gamesLock = new ReentrantLock();
     private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
     private static final List<ExecutorService> threadPoolPlayers = new ArrayList<>(Collections.nCopies(MAX_GAMES, Executors.newFixedThreadPool(MAX_PLAYERS)));
+    private static final List<Boolean> threadPoolPlayersAvailability = new ArrayList<>(Collections.nCopies(MAX_GAMES, true));
     private static int gameCount = 0;
     private static double ratio = 10;
 
@@ -54,7 +57,6 @@ public class Server {
 
         new Thread(() -> {
             while (true) {
-
                 // Start a new game if enough players are in the wait queue
                 if (rankedQueue.size() >= MAX_PLAYERS) {
 
@@ -81,7 +83,6 @@ public class Server {
                     //Create a new game with the intersected players
                     if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                         System.out.println("Creating a new game with players: " + intersect);
-                        int game_id = findFirst(active_games, 0);
                         List<Player> players = new ArrayList<>();
                         for (int i = intersect.size() - 1; i >= 0; i--) {
                             System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
@@ -90,14 +91,7 @@ public class Server {
                             player.notifyGameStart();
                         }
 
-                        threadPool.submit(() -> {
-                            Game game = new Game(getAndIncrementGameCount(), players);
-                            activeGames.add(game);
-
-                            sendMessageToPlayers(game, GAME_GUESS_REQUEST.toHeader() +
-                                    "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
-
-                        });
+                        startGame(players);
                     }
                 }
 
@@ -111,14 +105,7 @@ public class Server {
                         player.setInGame(true);
                     }
 
-                    threadPool.submit(() -> {
-                        Game game = new Game(getAndIncrementGameCount(), players);
-                        activeGames.add(game);
-
-                        sendMessageToPlayers(game, GAME_GUESS_REQUEST.toHeader() +
-                                "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
-
-                    });
+                    startGame(players);
                 }
 
                 // Sleep for some time to avoid high CPU usage
@@ -151,20 +138,21 @@ public class Server {
                     SocketChannel clientSocketChannel = (SocketChannel) key.channel();
                     ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
                     int bytesRead = -1;
-                    try{
+                    try {
                         bytesRead = clientSocketChannel.read(buffer);
                     }
                     catch (SocketException e) {
+                        // TODO: Remover completamente se estiver num jogo, suspenso se em queue
+                        // Exceção não ocorreu ( quando ligação é terminada, bytesRead = -1 )
                         // Handle the "Connection reset" exception
                         System.err.println("Connection reset by peer: " + e.getMessage());
                         key.cancel();
                         Player player = getPlayerFromQueue(clientSocketChannel);
-                        if(player != null){
+                        if(player != null) {
                             suspendPlayer(player);
                             String username = player.getUsername();
                             System.err.println("Player " + username + " disconnected");
-                        }
-                        else {
+                        } else {
                             removePlayer(clientSocketChannel);
                         }
                     }
@@ -177,13 +165,38 @@ public class Server {
                         buffer.flip();
                         String message = new String(buffer.array(), 0, bytesRead);
                         handleMessage(clientSocketChannel, message);
+                    } else {
+                        // TODO
                     }
                 }
             }
         }
     }
 
+    private static void startGame(List<Player> players) {
+        threadPool.submit(() -> {
+            Game game = new Game(getAndIncrementGameCount(), players, getAvailableThreadPoolPlayer());
+            gamesLock.lock();
+            activeGames.add(game);
+            gamesLock.unlock();
 
+            //threadPool.execute(game); // Remove line below and uncomment this line to use a thread pool
+            sendMessageToPlayers(game,  GAME_GUESS_REQUEST.toHeader() + "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
+        });
+    }
+
+    private static ExecutorService getAvailableThreadPoolPlayer() {
+        int availableThreadPoolIndex = -1;
+        synchronized (threadPoolPlayersAvailability) {
+            availableThreadPoolIndex = findFirst(threadPoolPlayersAvailability,  true);
+            if (availableThreadPoolIndex == -1) {
+                System.out.println("No available thread pool");
+                return null;
+            }
+            threadPoolPlayersAvailability.set(availableThreadPoolIndex, false);
+        }
+        return threadPoolPlayers.get(availableThreadPoolIndex);
+    }
 
 
     public static void handleMessage(SocketChannel clientSocketChannel, String message) {
@@ -294,16 +307,23 @@ public class Server {
     }
 
     private static void endGame(Game game) {
+        gamesLock.lock();
         activeGames.remove(game);
-        game.gameOver(); // remove when game handles messages
+        gamesLock.unlock();
+        sendMessageToPlayers(game, "All players have made a guess! The secret number was " + game.getSecretNumber());
 
         for (Player p : game.getPlayers()) {
+            int distance = game.getDistance(p);
+            if (distance == 0) {
+                sendMessageToPlayer(p, "You guessed the secret number!");
+                sendMessageToPlayers(game, "Player " + p.getUsername() + " guessed the secret number!");
+            }
+            Server.sendMessageToPlayer(p, "Your guess was " + distance + " away from the secret number");
             sendMessageToPlayer(p, "Your score is " + p.getScore());
 
+            p.notifyGameOver();
             normalQueue.add(p);
-
             p.startWaitTimer();
-
         }
     }
 
@@ -427,7 +447,9 @@ public class Server {
                 game.removePlayer(player);
                 sendMessageToPlayers(game, "Player " + player.getUsername() + " has left the game");
                 if (game.getPlayers().isEmpty()) {
+                    gamesLock.lock();
                     activeGames.remove(game);
+                    gamesLock.unlock();
                 }
             }
         }

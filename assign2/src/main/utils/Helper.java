@@ -3,6 +3,7 @@ package main.utils;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
 
 public class Helper {
 
@@ -55,9 +56,9 @@ public class Helper {
         return hashPassword(String.valueOf(System.currentTimeMillis()));
     }
 
-    public static int findFirst(int[] nums, int target) {
-        for (int i = 0; i < nums.length; i++) {
-            if (nums[i] == target) {
+    public static int findFirst(List<Boolean> nums, boolean target) {
+        for (int i = 0; i < nums.size(); i++) {
+            if (nums.get(i) == target) {
                 return i;
             }
         }
