@@ -86,11 +86,16 @@ public class Server {
                     if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                         System.out.println("Creating a new game with players: " + intersect);
                         List<Player> players = new ArrayList<>();
+                        int numPlayers = 0;
                         for (int i = intersect.size() - 1; i >= 0; i--) {
                             System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
                             Player player = rankedQueue.remove(i);
                             players.add(player);
                             player.notifyGameStart();
+                            numPlayers++;
+                            if (numPlayers >= MAX_PLAYERS) {
+                                break;
+                            }
                         }
 
                         startGame(players);
