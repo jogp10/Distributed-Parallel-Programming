@@ -64,14 +64,14 @@ public class Game implements Runnable {
     }
 
     public void guess(Player player, int guess) {
-        int distance = Math.abs(getSecretNumber() - guess);
+        playerGuesses.put(player, guess);
+        int distance = getDistance(player);
         player.setGuessed(true);
         player.updateScore(distance != 0 ? MAX_RANGE / 2 - distance : 100);
-        playerGuesses.put(player, guess);
     }
 
     public int getDistance(Player player) {
-        return playerGuesses.getOrDefault(player, -1);
+        return Math.abs(playerGuesses.getOrDefault(player, -1) - getSecretNumber());
     }
 
     public int getMaxRange() {

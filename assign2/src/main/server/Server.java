@@ -74,12 +74,12 @@ public class Server {
                         eligibleGame.add(eligPlayers);
                     }
 
-
                     //Intersect all the lists
                     List<Integer> intersect = eligibleGame.get(0);
                     for(int i = 1; i < eligibleGame.size(); i++) {
                         intersect.retainAll(eligibleGame.get(i));
                     }
+
                     //Create a new game with the intersected players
                     if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                         System.out.println("Creating a new game with players: " + intersect);
@@ -96,7 +96,10 @@ public class Server {
                 }
 
                 if (normalQueue.size() >= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
-                    System.out.println("Creating a new game with players: " + normalQueue);
+                    System.out.println("Creating a new game with players: ");
+                    normalQueue.subList(0, MAX_PLAYERS).forEach(e -> System.out.print(e.getUsername() + " "));
+                    System.out.println();
+
                     List<Player> players = new ArrayList<>();
                     for (int i = 0; i < MAX_PLAYERS; i++) {
                         Player player = normalQueue.remove(0);
