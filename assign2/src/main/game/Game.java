@@ -3,12 +3,15 @@ package main.game;
 import main.server.Server;
 import main.utils.MessageType;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Game implements Runnable {
     private final int id;
@@ -18,6 +21,9 @@ public class Game implements Runnable {
     private static final int MIN_RANGE = 1;
     private static ExecutorService threadPoolPlayers;
     private final Map<Player, Integer> playerGuesses = new ConcurrentHashMap<>();
+    private final ReentrantLock guessLock = new ReentrantLock();
+    private final Condition guessReceived = guessLock.newCondition();
+
 
     public Game(int id, List<Player> players, ExecutorService executorService) {
         this.id = id;
@@ -44,6 +50,10 @@ public class Game implements Runnable {
 
     public boolean isOver() {
         return allPlayersGuessed();
+    }
+
+    public void setPlayerGuess(Player player, int guess) {
+        playerGuesses.put(player, guess);
     }
 
     public void addPlayer(Player player) {
@@ -89,11 +99,52 @@ public class Game implements Runnable {
         for (Player player : players) {
             threadPoolPlayers.execute(() -> {
                 while (!allPlayersGuessed() && !player.getGuessed()) {
-                    int guess = player.makeGuess();
-                    guess(player, guess);
+                    waitForGuess(player);
+
+                    if (player.getGuessed()) {
+                        System.out.println("Player " + player.getUsername() + " has guessed.");
+                        int guess = playerGuesses.get(player);
+                        guess(player, guess);
+                    }
                 }
             });
         }
-        while (!allPlayersGuessed()) {};
+        threadPoolPlayers.shutdown();
+
+        try {
+            // Wait for the tasks to complete or timeout after a specified duration
+            boolean tasksCompleted = threadPoolPlayers.awaitTermination(1, TimeUnit.MINUTES);
+            if (tasksCompleted) {
+                // All tasks have completed
+                System.out.println("All Players have guessed.");
+            } else {
+                // Timeout occurred before all tasks completed
+                System.out.println("Timeout occurred before all tasks completed.");
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void waitForGuess(Player player) {
+
+        guessLock.lock();
+        try {
+            while (!player.getGuessed()) {
+                guessReceived.await();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            guessLock.unlock();
+        }
+    }
+
+    public Condition getGuessCondition() {
+        return guessReceived;
+    }
+
+    public Lock getGuessLock() {
+        return guessLock;
     }
 }

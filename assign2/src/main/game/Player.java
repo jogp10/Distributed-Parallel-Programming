@@ -198,7 +198,7 @@ public class Player {
         this.setInGame(true);
     }
 
-    public int makeGuess() {
+    public int askToGuess() {
         // Read the guess from the player
         ByteBuffer buffer = ByteBuffer.allocate(1024);
         buffer = ByteBuffer.allocate(1024);
@@ -210,9 +210,6 @@ public class Player {
         buffer.flip();
         String guess = new String(buffer.array()).trim();
         int number = Integer.parseInt(guess);
-
-        // Mark the player as having guessed
-        this.setGuessed(true);
 
         return number;
     }

@@ -13,6 +13,7 @@ import java.nio.channels.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -177,15 +178,13 @@ public class Server {
     }
 
     private static void startGame(List<Player> players) {
-        threadPool.submit(() -> {
-            Game game = new Game(getAndIncrementGameCount(), players, getAvailableThreadPoolPlayer());
-            gamesLock.lock();
-            activeGames.add(game);
-            gamesLock.unlock();
+        Game game = new Game(getAndIncrementGameCount(), players, getAvailableThreadPoolPlayer());
+        gamesLock.lock();
+        activeGames.add(game);
+        gamesLock.unlock();
 
-            //threadPool.execute(game); // Remove line below and uncomment this line to use a thread pool
-            sendMessageToPlayers(game,  GAME_GUESS_REQUEST.toHeader() + "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
-        });
+        threadPool.execute(game); // Remove line below and uncomment this line to use a thread pool
+        //sendMessageToPlayers(game,  GAME_GUESS_REQUEST.toHeader() + "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
     }
 
     private static ExecutorService getAvailableThreadPoolPlayer() {
@@ -298,14 +297,26 @@ public class Server {
             return;
         }
 
-        // Mark the player as having made a guess
-        game.guess(player, guess);
+        player.setGuessed(true);
+        game.setPlayerGuess(player, guess);
 
-        // End the game if all players have made a guess
-        if(game.allPlayersGuessed()){
-            endGame(game);
-        } else {
-            sendMessageToPlayer(player, "Waiting for other players to guess...");
+        notifyGuessReceived(game, player);
+
+    }
+
+    private static void notifyGuessReceived(Game game, Player player) {
+        Lock lock = game.getGuessLock();
+        Condition condition = game.getGuessCondition();
+
+        lock.lock();
+        try {
+            // Update the player's guess information
+            player.setGuessed(true);
+
+            // Signal the waiting thread that the guess has been received
+            condition.signalAll();
+        } finally {
+            lock.unlock();
         }
     }
 
