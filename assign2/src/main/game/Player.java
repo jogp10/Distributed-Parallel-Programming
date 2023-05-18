@@ -20,6 +20,8 @@ public class Player {
     private int waitingTime = 0;
     private boolean inQueue = false;
 
+    private boolean updated = false;
+
     public Player(int id, SocketChannel socketChannel) {
         this.id = id;
         this.score = 0;
@@ -66,6 +68,7 @@ public class Player {
     }
 
     public void incrementScore(int points) {
+        this.updated = true;
         this.score += points;
         if (this.score < 0) this.score = 0;
     }
@@ -84,6 +87,14 @@ public class Player {
 
     public boolean getAbsent() {
         return absent;
+    }
+
+    public boolean getUpdated() {
+        return updated;
+    }
+
+    public void setUpdated(boolean updated) {
+        this.updated = updated;
     }
 
     @Override

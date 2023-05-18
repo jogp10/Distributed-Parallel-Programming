@@ -62,6 +62,7 @@ public class Game {
                     int distance = Math.abs(guess - secretNumber);
                     int points = 50 - distance;
                     player.incrementScore(points);
+
                 }
 
                 if (allPlayersGuessed()) {

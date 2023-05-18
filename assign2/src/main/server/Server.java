@@ -10,9 +10,14 @@ import java.io.*;
 import java.net.*;
 import java.nio.*;
 import java.nio.channels.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static main.utils.Helper.MESSAGE_TERMINATOR;
 
@@ -33,6 +38,7 @@ public class Server {
     private static int gameCount = 0;
     private static double ratio = 10;
 
+    private static final Lock lock = new ReentrantLock();
 
 
     public static void main(String[] args) throws IOException {
@@ -43,6 +49,12 @@ public class Server {
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
         System.out.println("Server is up and running");
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                updateAllPlayers();
+            }
+        });
 
         new Thread(() -> {
             while (true) {
@@ -123,16 +135,21 @@ public class Server {
                         // Handle the "Connection reset" exception
                         System.err.println("Connection reset by peer: " + e.getMessage());
                         key.cancel();
-                        Player player = getPlayerFromQueue(clientSocketChannel);
-                        if(player != null){
-                            suspendPlayer(player);
+                        Player player = getPlayer(clientSocketChannel);
+                        //todo change from queue  to everyplace
+
+                        if(player != null) {
+                            if (player.isInQueue()) {
+                                suspendPlayer(player);
+                            }
+                            else {
+                                updatePlayerEntry(player);
+                                removePlayerNotInQueue(player);
+                            }
                             String username = player.getUsername();
                             System.err.println("Player " + username + " disconnected");
+                        }
 
-                        }
-                        else {
-                            removePlayer(clientSocketChannel);
-                        }
                     }
                     catch (IOException e) {
                         // Handle other I/O exceptions
@@ -161,9 +178,6 @@ public class Server {
     }
 
 
-    private static void handleMessage(SocketChannel clientSocketChannel, String message, MessageType messageType){
-
-    }
     private static void handleMessage(SocketChannel clientSocketChannel, String message) {
 
         switch (Helper.parseMessageType(message)) {
@@ -185,12 +199,19 @@ public class Server {
         //iterate waitQueue and find the player with the sessionToken
         for(Player player : waitQueue) {
             if(player.getSessionToken().equals(sessionToken)) {
-                unsuspendPLayer(player);
-                player.setSocketChannel(clientSocketChannel);
-                //add player to authenticatedPlayers
-                //send message to player
-                sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue." );
-                return;
+                if(player.getAbsent()) {
+                    unsuspendPlayer(player);
+                    player.setSocketChannel(clientSocketChannel);
+                    //add player to authenticatedPlayers
+                    //send message to player
+                    sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue.");
+                    return;
+                }
+                else {
+                    sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Player is already in the wait queue.");
+                    return;
+                }
+
             }
         }
 
@@ -268,6 +289,13 @@ public class Server {
             return;
         }
 
+        boolean loginFinished = readFileToLookupPlayer(username , password, clientSocketChannel);
+
+        if (!loginFinished) {
+            writeNewPlayerToFile(username, password, clientSocketChannel);
+        }
+
+        /*
         try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
             String line;
             boolean headerLine = true;
@@ -318,6 +346,7 @@ public class Server {
         }
 
 
+
         //if username was not in the database
         // Add new user to CSV
         try (FileWriter writer = new FileWriter(csvFile, true)) {
@@ -345,6 +374,8 @@ public class Server {
             System.err.println("Error writing to CSV file: " + e.getMessage());
             sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
         }
+
+        */
     }
 
     private static void removePlayer(SocketChannel clientSocketChannel) {
@@ -384,7 +415,7 @@ public class Server {
         player.setAbsent(true);
     }
 
-    private static void unsuspendPLayer(Player player){
+    private static void unsuspendPlayer(Player player){
         player.setAbsent(false);
     }
 
@@ -431,7 +462,7 @@ public class Server {
 
 
 
- private static Player getUnauthenticatedPlayer(SocketChannel clientSocketChannel) {
+    private static Player getUnauthenticatedPlayer(SocketChannel clientSocketChannel) {
         for (Player player : unauthenticatedPlayers) {
             if (player.getSocketChannel() == clientSocketChannel) {
                 return player;
@@ -491,5 +522,155 @@ public class Server {
             }
         }
         return eligibleOpponents;
+    }
+
+    public static boolean readFileToLookupPlayer(String username, String password, SocketChannel clientSocketChannel) {
+        // Acquire the lock for reading
+        lock.lock();
+        String csvFile = "users.csv";
+        boolean loginSuccessful = false;
+        try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
+            String line;
+            boolean headerLine = true;
+            while ((line = reader.readLine()) != null) {
+                if(headerLine){
+                    headerLine = false;
+                    continue;
+                }
+                String[] fields = line.split(",");
+                String csvUsername = fields[0];
+                String csvPassword = fields[1];
+                int csvScore = Integer.parseInt(fields[2]);
+                int csvGamesPlayed = Integer.parseInt(fields[3]);
+
+                if (csvUsername.equals(username)) {
+                    if (Helper.verifyPassword(password, csvPassword)) {
+                        sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully logged in.");
+                        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+
+                        Player player = getUnauthenticatedPlayer(clientSocketChannel);
+                        assert player != null;
+                        player.setUsername(username);
+                        player.setScore(csvScore);
+                        player.setGamesPlayed(csvGamesPlayed);
+                        String newSessionToken = Helper.generateSessionToken();
+                        player.setSessionToken(newSessionToken);
+                        sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Here is your session token: " + newSessionToken
+                                + "\nPlease use this token to reconnect to the server.");
+
+                        waitQueue.add(player);
+                        player.startWaitTimer();
+                        unauthenticatedPlayers.remove(player);
+                        loginSuccessful = true;
+
+                    }
+                    else {
+                        // Password incorrect
+                        sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Incorrect password. Please try again.");
+                        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+                        loginSuccessful = false;
+                    }
+                }
+            }        }
+        catch (IOException e) {
+            System.err.println("Error reading CSV file: " + e.getMessage());
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+            loginSuccessful = false;
+        } finally {
+            lock.unlock();
+        }
+        return loginSuccessful;
+    }
+
+    public static void writeNewPlayerToFile(String username, String password, SocketChannel clientSocketChannel) {
+        // Acquire the lock for writing
+        lock.lock();
+        String csvFile = "users.csv";
+        try (FileWriter writer = new FileWriter(csvFile, true)) {
+            String hashedPassword = Helper.hashPassword(password);
+            String newSessionToken = Helper.generateSessionToken();
+
+            String newLine = username + "," + hashedPassword + "," + 0 + "," + 0 + "\n";
+            writer.write(newLine);
+
+            Player player = getUnauthenticatedPlayer(clientSocketChannel);
+            assert player != null;
+            player.setUsername(username);
+            player.setScore(0);
+            player.setGamesPlayed(0);
+            player.setSessionToken(newSessionToken);
+            waitQueue.add(player);
+            player.startWaitTimer();
+            unauthenticatedPlayers.remove(player);
+
+            sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+        } catch (IOException e) {
+            System.err.println("Error writing to CSV file: " + e.getMessage());
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
+        } finally {
+            // Release the lock after writing
+            lock.unlock();
+        }
+    }
+
+    //function that updates the file, uses the lock. the function receives a player and updates the file with the new score and games played
+
+    public static void updatePlayerEntry(Player player){
+        if (!player.getUpdated()){
+            return;
+        }
+        player.setUpdated(false);
+        lock.lock();
+        String csvFile = "users.csv";
+        try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
+            String line;
+            boolean headerLine = true;
+            while ((line = reader.readLine()) != null) {
+                if (headerLine){
+                    headerLine = false;
+                    continue;
+                }
+                String[] fields = line.split(",");
+                String csvUsername = fields[0];
+                String csvPassword = fields[1];
+
+                if (csvUsername.equals(player.getUsername())) {
+                    String newLine = csvUsername + "," + csvPassword + "," + player.getScore() + "," + player.getGamesPlayed();
+                    Path path = Path.of(csvFile);
+                    String fileContent = Files.readString(path);
+                    fileContent = fileContent.replace(line, newLine);
+                    Files.writeString(path, fileContent);
+                    break;
+                }
+            }
+        }
+        catch (IOException e) {
+            System.err.println("Error reading CSV file: " + e.getMessage());
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    //function that creates a set of all of the players that are in the waitQueue or are in the games and that have the player.wasUpdated() flag set to true
+    //the function then updates the file with the new score and games played for each player in the set
+
+    public static void updateAllPlayers(){
+        Set<Player> playersToUpdate = new HashSet<>();
+        for(Player player : waitQueue){
+            if(player.getUpdated()){
+                playersToUpdate.add(player);
+            }
+        }
+        for(Game game : activeGames){
+            for (Player player : game.getPlayers()){
+                if(player.getUpdated()){
+                    playersToUpdate.add(player);
+                }
+            }
+        }
+        for(Player player : playersToUpdate){
+            updatePlayerEntry(player);
+        }
     }
 }
