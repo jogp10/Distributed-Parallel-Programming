@@ -13,8 +13,12 @@ import java.nio.channels.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -22,6 +26,11 @@ import java.util.concurrent.locks.ReentrantLock;
 import static main.utils.Helper.MESSAGE_TERMINATOR;
 
 import static java.lang.Math.abs;
+
+import static main.utils.MessageType.*;
+
+import static main.utils.Helper.findFirst;
+
 
 
 public class Server {
@@ -31,13 +40,18 @@ public class Server {
     private static final int BUFFER_SIZE = 1024;
 
     private static int playerCount = 0;
-    private static List<Player> waitQueue = new ArrayList<>();
+    private static List<Player> normalQueue = new ArrayList<>();
+    private static List<Player> rankedQueue = new ArrayList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static List<Game> activeGames = new ArrayList<>();
+    private static Lock gamesLock = new ReentrantLock();
     private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
+    private static final List<ExecutorService> threadPoolPlayers = new ArrayList<>(Collections.nCopies(MAX_GAMES, Executors.newFixedThreadPool(MAX_PLAYERS)));
+    private static final List<Boolean> threadPoolPlayersAvailability = new ArrayList<>(Collections.nCopies(MAX_GAMES, true));
     private static int gameCount = 0;
     private static double ratio = 10;
 
+    //todo change name
     private static final Lock lock = new ReentrantLock();
 
 
@@ -59,47 +73,66 @@ public class Server {
         new Thread(() -> {
             while (true) {
                 // Start a new game if enough players are in the wait queue
-                if (waitQueue.size() >= MAX_PLAYERS) {
+                if (rankedQueue.size() >= MAX_PLAYERS) {
 
                     List<List<Integer>> eligibleGame  = new ArrayList<>();
                     //matchmaking
-                    Iterator<Player> iterator = waitQueue.iterator();
+                    Iterator<Player> iterator = rankedQueue.iterator();
                     while (iterator.hasNext()) {
                         Player player = iterator.next();
                         if (player.getAbsent()) {
                             iterator.remove();
+                            //todo change, if player is absent, must be in a queue
                             removePlayerNotInQueue(player); //maybe this is not even needed
                             continue;
                         }
-                        List<Integer> eligPlayers = findEligibleOpponents(player, waitQueue);
+                        List<Integer> eligPlayers = findEligibleOpponents(player, rankedQueue);
                         eligibleGame.add(eligPlayers);
                     }
-
 
                     //Intersect all the lists
                     List<Integer> intersect = eligibleGame.get(0);
                     for(int i = 1; i < eligibleGame.size(); i++) {
                         intersect.retainAll(eligibleGame.get(i));
                     }
+
                     //Create a new game with the intersected players
                     if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                         System.out.println("Creating a new game with players: " + intersect);
                         List<Player> players = new ArrayList<>();
-                        for (int i = 0; i < MAX_PLAYERS; i++) {
-                            Player player = waitQueue.remove(0);
+                        int numPlayers = 0;
+                        for (int i = intersect.size() - 1; i >= 0; i--) {
+                            System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
+                            Player player = rankedQueue.remove(i);
                             players.add(player);
-                            player.stopWaitTimer();
+                            player.notifyGameStart();
+                            numPlayers++;
+                            if (numPlayers >= MAX_PLAYERS) {
+                                break;
+                            }
                         }
 
-                        threadPool.submit(() -> {
-                            Game game = new Game(getAndIncrementGameCount(), players);
-                            activeGames.add(game);
-                            sendMessageToPlayers(game, "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
-                        });
+                        startGame(players);
                     }
                 }
+                //todo take absent players into account
+                if (normalQueue.size() >= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
+                    System.out.println("Creating a new game with players: ");
+                    normalQueue.subList(0, MAX_PLAYERS).forEach(e -> System.out.print(e.getUsername() + " "));
+                    System.out.println();
 
-                    // Sleep for some time to avoid high CPU usage
+                    List<Player> players = new ArrayList<>();
+                    for (int i = 0; i < MAX_PLAYERS; i++) {
+                        Player player = normalQueue.remove(0);
+                        players.add(player);
+                        player.stopWaitTimer();
+                        player.setInGame(true);
+                    }
+
+                    startGame(players);
+                }
+
+                // Sleep for some time to avoid high CPU usage
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
@@ -124,14 +157,17 @@ public class Server {
                     Player player = new Player(playerCount++, clientSocketChannel);
                     unauthenticatedPlayers.add(player);
                     sendMessageToPlayer(player, MessageType.AUTHENTICATION_REQUEST.toHeader());
+
                 } else if (key.isReadable()) {
                     SocketChannel clientSocketChannel = (SocketChannel) key.channel();
                     ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
                     int bytesRead = -1;
-                    try{
+                    try {
                         bytesRead = clientSocketChannel.read(buffer);
                     }
                     catch (SocketException e) {
+                        // TODO: Remover completamente se estiver num jogo, suspenso se em queue
+                        // Exceção não ocorreu ( quando ligação é terminada, bytesRead = -1 )
                         // Handle the "Connection reset" exception
                         System.err.println("Connection reset by peer: " + e.getMessage());
                         key.cancel();
@@ -149,6 +185,10 @@ public class Server {
                             String username = player.getUsername();
                             System.err.println("Player " + username + " disconnected");
                         }
+                        else {
+                            System.err.println("Must have been the wind...");
+                            // todo do not leave this here
+                        }
 
                     }
                     catch (IOException e) {
@@ -160,30 +200,56 @@ public class Server {
                         buffer.flip();
                         String message = new String(buffer.array(), 0, bytesRead);
                         handleMessage(clientSocketChannel, message);
+                    } else {
+                        // TODO
                     }
                 }
-
-                /*
-                List<Player> players = new ArrayList<>();
-                for (int i = 0; i < MAX_PLAYERS; i++) {
-                    Player player = waitQueue.remove(0);
-                    players.add(player);
-                }
-
-                Game game = new Game(getAndIncrementGameCount(), generateSecretNumber(), players);
-                activeGames.add(game);
-                sendMessageToPlayers(game, "Game started! Guess a number between " + MIN_RANGE + " and " + MAX_RANGE);*/
             }
         }
     }
 
+    private static void startGame(List<Player> players) {
+        Game game = new Game(getAndIncrementGameCount(), players, getAvailableThreadPoolPlayer());
+        gamesLock.lock();
+        activeGames.add(game);
+        gamesLock.unlock();
 
-    private static void handleMessage(SocketChannel clientSocketChannel, String message) {
+        Future<?> future = threadPool.submit(game);
 
+        try {
+            future.get();
+            System.out.println("Game" + game.getId() + " finished");
+            endGame(game);
+        } catch (InterruptedException e) {
+            // Handle interruption
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            // Handle exception thrown by the task
+            e.printStackTrace();
+        }
+    }
+
+    private static ExecutorService getAvailableThreadPoolPlayer() {
+        int availableThreadPoolIndex = -1;
+        synchronized (threadPoolPlayersAvailability) {
+            availableThreadPoolIndex = findFirst(threadPoolPlayersAvailability,  true);
+            if (availableThreadPoolIndex == -1) {
+                System.out.println("No available thread pool");
+                return null;
+            }
+            threadPoolPlayersAvailability.set(availableThreadPoolIndex, false);
+        }
+        return threadPoolPlayers.get(availableThreadPoolIndex);
+    }
+
+
+    public static void handleMessage(SocketChannel clientSocketChannel, String message) {
+        
         switch (Helper.parseMessageType(message)) {
             case GAME_GUESS -> handleGuessMessage(clientSocketChannel, Helper.parseMessage(message));
             case AUTHENTICATION_ATTEMPT -> handleAuthentication(clientSocketChannel, Helper.parseMessage(message));
             case AUTHENTICATION_ATTEMPT_TOKEN -> handleAuthenticationToken(clientSocketChannel, Helper.parseMessage(message));
+            case GAME_MODE_RESPONSE -> handleGameModeResponse(clientSocketChannel, Helper.parseMessage(message));
             case DEFAULT ->
                 // Handle invalid message format or unsupported type
                     System.err.println("Invalid message format or unsupported type: " + message);
@@ -192,12 +258,51 @@ public class Server {
 
     }
 
+    private static void handleGameModeResponse(SocketChannel clientSocketChannel, String parseMessage) {
+        if(parseMessage.equals("1")) {
+            Player player = getUnauthenticatedPlayer(clientSocketChannel);
+            unauthenticatedPlayers.remove(player);
+            if(player != null) {
+                normalQueue.add(player);
+                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected simple mode.");
+            }
+        }
+        else if(parseMessage.equals("2")) {
+            Player player = getUnauthenticatedPlayer(clientSocketChannel);
+            unauthenticatedPlayers.remove(player);
+            if(player != null) {
+                rankedQueue.add(player);
+                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected ranked mode.");
+            }
+        }
+        else {
+            sendMessage(clientSocketChannel, MessageType.GAME_MODE_REQUEST.toHeader() + "Invalid game mode.");
+        }
+
+    }
+
     private static void handleAuthenticationToken(SocketChannel clientSocketChannel, String parseMessage) {
         String[] tokens = parseMessage.split(";");
         String sessionToken = tokens[0];
 
         //iterate waitQueue and find the player with the sessionToken
-        for(Player player : waitQueue) {
+        for(Player player : normalQueue) {
+            if(player.getSessionToken().equals(sessionToken)) { 
+                if(player.getAbsent()) {
+                    unsuspendPlayer(player);
+                    player.setSocketChannel(clientSocketChannel);
+                    //add player to authenticatedPlayers
+                    //send message to player
+                    sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue.");
+                    return;
+                }
+                else {
+                    sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Player is already in the wait queue.");
+                    return;
+                }
+            }
+        }
+        for(Player player : rankedQueue) {
             if(player.getSessionToken().equals(sessionToken)) {
                 if(player.getAbsent()) {
                     unsuspendPlayer(player);
@@ -211,15 +316,14 @@ public class Server {
                     sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Player is already in the wait queue.");
                     return;
                 }
-
             }
         }
 
         //in case the player was not found in the waitQueue
         sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Invalid session token.");
-            }
+    }
 
-    private static void handleGuessMessage(SocketChannel clientSocketChannel, String message) {
+    public static void handleGuessMessage(SocketChannel clientSocketChannel, String message) {
         // Find the player associated with this client socket channel
         Player player = getPlayer(clientSocketChannel);
         if (player == null) {
@@ -236,42 +340,35 @@ public class Server {
         int guess;
         try {
             guess = Integer.parseInt(message.trim());
+            if (guess < game.getMinRange() || guess > game.getMaxRange()) {
+                sendMessageToPlayer(player, "Guess out of range, try again between " + game.getMinRange() + " and " + game.getMaxRange());
+                return;
+            }
         }
         catch (NumberFormatException e) {
             sendMessageToPlayer(player, "Invalid guess");
             return;
         }
 
-        // Mark the player as having made a guess
-        game.guess(player, guess);
+        notifyGuessReceived(game, player, guess);
+    }
 
-        // End the game if all players have made a guess
-        if(game.allPlayersGuessed()){
-            sendMessageToPlayers(game, "All players have made a guess! The secret number was " + game.getSecretNumber());
-
-            if (guess == game.getSecretNumber()) {
-                sendMessageToPlayer(player, "You guessed the secret number!");
-                sendMessageToPlayers(game, "Player " + player.getUsername() + " guessed the secret number!");
-            } else {
-                for (Player p : game.getPlayers()) {
-                    sendMessageToPlayer(p, "Your guess was " + game.getDistance(p) + " away from the secret number");
-                }
-            }
-
-            endGame(game);
-        } else {
-            sendMessageToPlayer(player, "Waiting for other players to guess...");
-        }
+    private static void notifyGuessReceived(Game game, Player player, int guess) {
+        game.setPlayerGuess(player, guess);
+        game.signalGuessReceived();
     }
 
     private static void endGame(Game game) {
+        gamesLock.lock();
         activeGames.remove(game);
-        game.gameOver();
+        int threadPoolIndex = threadPoolPlayers.indexOf(game.getThreadPoolPlayers());
+        threadPoolPlayersAvailability.set(threadPoolIndex, true);
+        gamesLock.unlock();
 
         for (Player p : game.getPlayers()) {
-            sendMessageToPlayer(p, "Your score is " + p.getScore());
+            p.notifyGameOver();
+            normalQueue.add(p);
             p.startWaitTimer();
-            waitQueue.add(p);
         }
     }
 
@@ -323,11 +420,17 @@ public class Server {
                         String newSessionToken = Helper.generateSessionToken();
                         player.setSessionToken(newSessionToken);
                         sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Here is your session token: " + newSessionToken
-                                + "\nPlease use this token to reconnect to the server.");
+                                + "\n\tPlease use this token to reconnect to the server.");
 
-                        waitQueue.add(player);
+
                         player.startWaitTimer();
-                        unauthenticatedPlayers.remove(player);
+
+                        // Choose matchmaking
+                        sendMessageToPlayer(player, MessageType.GAME_MODE_REQUEST.toHeader() + "Please choose a matchmaking option: \n" +
+                                "1. Normal\n" +
+                                "2. Ranked\n"
+                        );
+
 
                     }
                     else {
@@ -346,7 +449,6 @@ public class Server {
         }
 
 
-
         //if username was not in the database
         // Add new user to CSV
         try (FileWriter writer = new FileWriter(csvFile, true)) {
@@ -363,12 +465,17 @@ public class Server {
             player.setScore(0);
             player.setGamesPlayed(0);
             player.setSessionToken(newSessionToken);
-            waitQueue.add(player);
-            player.startWaitTimer();
-            unauthenticatedPlayers.remove(player);
+
 
             sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Successfully registered as a new user.");
             sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+            player.startWaitTimer();
+
+            // Choose matchmaking
+            sendMessageToPlayer(player, MessageType.GAME_MODE_REQUEST.toHeader() + "Please choose a matchmaking option: \n" +
+                    "1. Normal\n" +
+                    "2. Ranked\n"
+            );
 
         } catch (IOException e) {
             System.err.println("Error writing to CSV file: " + e.getMessage());
@@ -386,13 +493,17 @@ public class Server {
     private static void removePlayer(Player player) {
         // Remove the player from the wait queue or active game
         if (player != null) {
-            waitQueue.remove(player);
+            // remove from normal queue or ranked queue
+            normalQueue.remove(player);
+            rankedQueue.remove(player);
             Game game = getGame(player);
             if (game != null) {
                 game.removePlayer(player);
                 sendMessageToPlayers(game, "Player " + player.getUsername() + " has left the game");
                 if (game.getPlayers().isEmpty()) {
+                    gamesLock.lock();
                     activeGames.remove(game);
+                    gamesLock.unlock();
                 }
             }
         }
@@ -420,8 +531,13 @@ public class Server {
     }
 
     private static boolean isLoggedIn(String username){
-        for (Player player: waitQueue){
+        for (Player player: normalQueue){
             if (player.getUsername().equalsIgnoreCase(username)) {
+                return true;
+            }
+        }
+        for(Player player: rankedQueue){
+            if (player.getUsername().equalsIgnoreCase(username)){
                 return true;
             }
         }
@@ -436,7 +552,12 @@ public class Server {
     }
 
     private static Player getPlayer(SocketChannel clientSocketChannel) {
-        for (Player player : waitQueue) {
+        for (Player player : normalQueue) {
+            if (player.getSocketChannel() == clientSocketChannel) {
+                return player;
+            }
+        }
+        for (Player player : rankedQueue) {
             if (player.getSocketChannel() == clientSocketChannel) {
                 return player;
             }
@@ -452,7 +573,12 @@ public class Server {
     }
 
     private static Player getPlayerFromQueue(SocketChannel clientSocketChannel) {
-        for (Player player : waitQueue) {
+        for (Player player : normalQueue) {
+            if (player.getSocketChannel() == clientSocketChannel) {
+                return player;
+            }
+        }
+        for (Player player : rankedQueue) {
             if (player.getSocketChannel() == clientSocketChannel) {
                 return player;
             }
@@ -471,7 +597,7 @@ public class Server {
         return null;
     }
 
-    private static Game getGame(Player player) {
+    public static Game getGame(Player player) {
         for (Game game : activeGames) {
             if (game.getPlayers().contains(player)) {
                 return game;
@@ -480,13 +606,14 @@ public class Server {
         return null;
     }
 
-    private static void sendMessageToPlayers(Game game, String message) {
+    public static void sendMessageToPlayers(Game game, String message) {
+        System.out.println("Sending message to players: " + message);
         for (Player player : game.getPlayers()) {
             sendMessage(player.getSocketChannel(), message);
         }
     }
 
-    private static void sendMessage(SocketChannel clientSocketChannel, String message) {
+    public static void sendMessage(SocketChannel clientSocketChannel, String message) {
         try {
             message += MESSAGE_TERMINATOR;
             ByteBuffer buffer = ByteBuffer.wrap(message.getBytes());
@@ -503,7 +630,8 @@ public class Server {
         }
     }
 
-    private static void sendMessageToPlayer(Player player, String message) {
+    public static void sendMessageToPlayer(Player player, String message) {
+        System.out.println("Sending message to player " + player.getUsername() + ": " + message);
         sendMessage(player.getSocketChannel(), message);
     }
 

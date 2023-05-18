@@ -13,6 +13,10 @@ public enum MessageType {
     KEEP_ALIVE,
 
     INFO, //server to client, should be printed to the user
+    GAME_MODE_REQUEST,
+    GAME_MODE_RESPONSE,
+    GAME_GUESS_REQUEST,
+
     DEFAULT;
     //...
 
