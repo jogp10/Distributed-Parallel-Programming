@@ -101,8 +101,11 @@ public class Game implements Runnable {
 
         List<Callable<Void>> tasks = new ArrayList<>();
         for (Player player : players) {
+            if (player == null || !player.isInGame()) {
+                continue;
+            }
             Callable<Void> task = () -> {
-                while (!allPlayersGuessed() && !playerGuessed(player)) {
+                while (!allPlayersGuessed() && player.isInGame()) { // removed && !playerGuessed(player) because most times the "Waiting..." message was not printing"
                     waitForGuess(player);
 
                     if (playerGuessed(player)) {
@@ -111,7 +114,7 @@ public class Game implements Runnable {
                         guess(player, guess);
 
                         if (!allPlayersGuessed()) {
-                            Server.sendMessageToPlayer(player, "Waiting for other players to guess...");
+                            Server.sendMessageToPlayer(player, MessageType.INFO.toHeader() +"Waiting for other players to guess...");
                         }
                     }
                 }
@@ -128,16 +131,16 @@ public class Game implements Runnable {
 
             // All Players have guessed.
             System.out.println("All Players have guessed.");
-            Server.sendMessageToPlayers(this, "All players have guessed! The secret number was " + getSecretNumber());
+            Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "All players have guessed! The secret number was " + getSecretNumber());
 
             for (Player p: players) {
                 int distance = getDistance(p);
                 if (distance == 0) {
-                    Server.sendMessageToPlayer(p, "You guessed the secret number!");
-                    Server.sendMessageToPlayers(this, "Player " + p.getUsername() + " guessed the secret number!");
+                    Server.sendMessageToPlayer(p, MessageType.INFO.toHeader() + "You guessed the secret number!");
+                    Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "Player " + p.getUsername() + " guessed the secret number!");
                 }
-                Server.sendMessageToPlayer(p, "Your guess was " + distance + " away from the secret number");
-                Server.sendMessageToPlayer(p, "Your score is " + p.getScore());
+                Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() +"Your guess was " + distance + " away from the secret number");
+                Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() + "Your score is " + p.getScore());
             }
 
         } catch (InterruptedException | ExecutionException e) {
@@ -148,7 +151,7 @@ public class Game implements Runnable {
     private void waitForGuess(Player player) {
         guessLock.lock();
         try {
-            while (!playerGuessed(player)) {
+            while (player != null && player.isInGame() && playerGuessed(player)) {
                 guessReceived.await();
             }
         } catch (InterruptedException e) {

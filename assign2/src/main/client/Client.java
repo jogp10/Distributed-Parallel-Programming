@@ -86,6 +86,7 @@ public class Client {
     }
 
     private static void sendMessageToServer(SocketChannel socketChannel, ByteBuffer buffer, String message) throws IOException {
+        message += MESSAGE_TERMINATOR;
         buffer.clear();
         buffer.put(message.getBytes());
         buffer.flip();
