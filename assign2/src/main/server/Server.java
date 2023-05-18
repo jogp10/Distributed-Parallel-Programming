@@ -11,8 +11,10 @@ import java.net.*;
 import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -183,8 +185,19 @@ public class Server {
         activeGames.add(game);
         gamesLock.unlock();
 
-        threadPool.execute(game); // Remove line below and uncomment this line to use a thread pool
-        //sendMessageToPlayers(game,  GAME_GUESS_REQUEST.toHeader() + "Game started! Guess a number between " + game.getMinRange() + " and " + game.getMaxRange());
+        Future<?> future = threadPool.submit(game);
+
+        try {
+            future.get();
+            System.out.println("Game" + game.getId() + " finished");
+            endGame(game);
+        } catch (InterruptedException e) {
+            // Handle interruption
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            // Handle exception thrown by the task
+            e.printStackTrace();
+        }
     }
 
     private static ExecutorService getAvailableThreadPoolPlayer() {
@@ -299,9 +312,7 @@ public class Server {
 
         player.setGuessed(true);
         game.setPlayerGuess(player, guess);
-
         notifyGuessReceived(game, player);
-
     }
 
     private static void notifyGuessReceived(Game game, Player player) {
@@ -324,17 +335,8 @@ public class Server {
         gamesLock.lock();
         activeGames.remove(game);
         gamesLock.unlock();
-        sendMessageToPlayers(game, "All players have made a guess! The secret number was " + game.getSecretNumber());
 
         for (Player p : game.getPlayers()) {
-            int distance = game.getDistance(p);
-            if (distance == 0) {
-                sendMessageToPlayer(p, "You guessed the secret number!");
-                sendMessageToPlayers(game, "Player " + p.getUsername() + " guessed the secret number!");
-            }
-            Server.sendMessageToPlayer(p, "Your guess was " + distance + " away from the secret number");
-            sendMessageToPlayer(p, "Your score is " + p.getScore());
-
             p.notifyGameOver();
             normalQueue.add(p);
             p.startWaitTimer();

@@ -74,9 +74,9 @@ public class Game implements Runnable {
     }
 
     public void guess(Player player, int guess) {
+        player.setGuessed(true);
         playerGuesses.put(player, guess);
         int distance = getDistance(player);
-        player.setGuessed(true);
         player.updateScore(distance != 0 ? MAX_RANGE / 2 - distance : 100);
     }
 
@@ -102,9 +102,13 @@ public class Game implements Runnable {
                     waitForGuess(player);
 
                     if (player.getGuessed()) {
-                        System.out.println("Player " + player.getUsername() + " has guessed.");
+                        System.out.println("Player " + player.getUsername() + " has guessed.");;
                         int guess = playerGuesses.get(player);
                         guess(player, guess);
+
+                        if (!allPlayersGuessed()) {
+                            Server.sendMessageToPlayer(player, "Waiting for other players to guess...");
+                        }
                     }
                 }
             });
@@ -112,11 +116,22 @@ public class Game implements Runnable {
         threadPoolPlayers.shutdown();
 
         try {
-            // Wait for the tasks to complete or timeout after a specified duration
+            // Wait for the players to guess or timeout after a specified duration
             boolean tasksCompleted = threadPoolPlayers.awaitTermination(1, TimeUnit.MINUTES);
             if (tasksCompleted) {
-                // All tasks have completed
+                // All Players have guessed.
                 System.out.println("All Players have guessed.");
+                Server.sendMessageToPlayers(this, "All players have guessed! The secret number was " + getSecretNumber());
+
+                for (Player p: players) {
+                    int distance = getDistance(p);
+                    if (distance == 0) {
+                        Server.sendMessageToPlayer(p, "You guessed the secret number!");
+                        Server.sendMessageToPlayers(this, "Player " + p.getUsername() + " guessed the secret number!");
+                    }
+                    Server.sendMessageToPlayer(p, "Your guess was " + distance + " away from the secret number");
+                    Server.sendMessageToPlayer(p, "Your score is " + p.getScore());
+                }
             } else {
                 // Timeout occurred before all tasks completed
                 System.out.println("Timeout occurred before all tasks completed.");
