@@ -15,7 +15,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -310,30 +309,19 @@ public class Server {
             return;
         }
 
-        player.setGuessed(true);
-        game.setPlayerGuess(player, guess);
-        notifyGuessReceived(game, player);
+        notifyGuessReceived(game, player, guess);
     }
 
-    private static void notifyGuessReceived(Game game, Player player) {
-        Lock lock = game.getGuessLock();
-        Condition condition = game.getGuessCondition();
-
-        lock.lock();
-        try {
-            // Update the player's guess information
-            player.setGuessed(true);
-
-            // Signal the waiting thread that the guess has been received
-            condition.signalAll();
-        } finally {
-            lock.unlock();
-        }
+    private static void notifyGuessReceived(Game game, Player player, int guess) {
+        game.setPlayerGuess(player, guess);
+        game.signalGuessReceived();
     }
 
     private static void endGame(Game game) {
         gamesLock.lock();
         activeGames.remove(game);
+        int threadPoolIndex = threadPoolPlayers.indexOf(game.getThreadPoolPlayers());
+        threadPoolPlayersAvailability.set(threadPoolIndex, true);
         gamesLock.unlock();
 
         for (Player p : game.getPlayers()) {

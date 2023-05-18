@@ -15,7 +15,6 @@ public class Player {
     private String username;
     private String sessionToken;
     private int gamesPlayed;
-    boolean guessed = false;
     boolean absent = false;
     private SocketChannel socketChannel;
     private Timer waitTimer;
@@ -113,14 +112,6 @@ public class Player {
         return hash;
     }
 
-    public void setGuessed(boolean b) {
-        guessed = b;
-    }
-
-    public boolean getGuessed() {
-        return guessed;
-    }
-
     public void setUsername(String username) {
         this.username = username;
     }
@@ -187,14 +178,12 @@ public class Player {
 
 
     public void notifyGameOver() {
-        this.setGuessed(false);
         this.setInGame(false);
         this.gamesPlayed++;
     }
 
     public void notifyGameStart() {
         this.stopWaitTimer();
-        this.setGuessed(false);
         this.setInGame(true);
     }
 
@@ -238,7 +227,6 @@ public class Player {
         } else {
             // TODO: Handle other message types
             // Output the message to the player
-
         }
     }
 
@@ -250,7 +238,6 @@ public class Player {
                 ", username='" + username + '\'' +
                 ", sessionToken='" + sessionToken + '\'' +
                 ", gamesPlayed=" + gamesPlayed +
-                ", guessed=" + guessed +
                 ", socketChannel=" + socketChannel +
                 ", waitTimer=" + waitTimer +
                 ", waitingTime=" + waitingTime +
