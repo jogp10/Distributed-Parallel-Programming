@@ -19,6 +19,7 @@ public class Game implements Runnable {
     private final List<Player> players;
     private static final int MAX_RANGE = 100;
     private static final int MIN_RANGE = 1;
+    private static int GAME_ROUND = 1;
     private final ConcurrentHashMap<Player, Integer> playerGuesses = new ConcurrentHashMap<Player, Integer>();
     private final Lock guessLock = new ReentrantLock();
     private final Condition guessReceived = guessLock.newCondition();
@@ -97,57 +98,70 @@ public class Game implements Runnable {
 
     @Override
     public void run() {
-        Server.sendMessageToPlayers(this, MessageType.GAME_GUESS_REQUEST.toHeader() + "Game started! Guess a number between " + getMinRange() + " and " + getMaxRange());
 
-        List<Callable<Void>> tasks = new ArrayList<>();
-        for (Player player : players) {
-            if (player == null || !player.isInGame()) {
-                continue;
-            }
-            Callable<Void> task = () -> {
-                while (!allPlayersGuessed() && player.isInGame()) { // removed && !playerGuessed(player) because most times the "Waiting..." message was not printing"
-                    waitForGuess(player);
+        while(GAME_ROUND<=3) {
+            System.out.println("Game " + getId() + " Round " + GAME_ROUND);
+            Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "Round " + GAME_ROUND);
+            Server.sendMessageToPlayers(this, MessageType.GAME_GUESS_REQUEST.toHeader() + "Game started! Guess a number between " + getMinRange() + " and " + getMaxRange());
 
-                    if (playerGuessed(player)) {
-                        System.out.println("Player " + player.getUsername() + " has guessed.");;
-                        int guess = playerGuesses.get(player);
-                        guess(player, guess);
+            List<Callable<Void>> tasks = new ArrayList<>();
 
-                        if (!allPlayersGuessed()) {
-                            Server.sendMessageToPlayer(player, MessageType.INFO.toHeader() +"Waiting for other players to guess...");
-                            break;
+            GAME_ROUND++;
+            for (Player player : players) {
+                if (player == null || !player.isInGame()) {
+                    continue;
+                }
+                Callable<Void> task = () -> {
+                    while (!allPlayersGuessed() && player.isInGame()) { // removed && !playerGuessed(player) because most times the "Waiting..." message was not printing"
+                        waitForGuess(player);
+
+                        if (playerGuessed(player)) {
+                            System.out.println("Player " + player.getUsername() + " has guessed.");;
+                            int guess = playerGuesses.get(player);
+                            guess(player, guess);
+
+                            if (!allPlayersGuessed()) {
+                                Server.sendMessageToPlayer(player, MessageType.INFO.toHeader() +"Waiting for other players to guess...");
+                                break;
+                            }
                         }
                     }
-                }
-                return null;
+                    return null;
 
-            };
-            tasks.add(task);
-        }
-
-        try {
-            List<Future<Void>> futures = threadPoolPlayers.invokeAll(tasks);
-            for (Future<Void> future : futures) {
-                future.get(); // This blocks and waits for the task to complete
+                };
+                tasks.add(task);
             }
 
-            // All Players have guessed.
-            System.out.println("All Players have guessed.");
-            Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "All players have guessed! The secret number was " + getSecretNumber());
-
-            for (Player p: players) {
-                int distance = getDistance(p);
-                if (distance == 0) {
-                    Server.sendMessageToPlayer(p, MessageType.INFO.toHeader() + "You guessed the secret number!");
-                    Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "Player " + p.getUsername() + " guessed the secret number!");
+            try {
+                List<Future<Void>> futures = threadPoolPlayers.invokeAll(tasks);
+                for (Future<Void> future : futures) {
+                    future.get(); // This blocks and waits for the task to complete
                 }
-                Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() +"Your guess was " + distance + " away from the secret number");
-                Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() + "Your score is " + p.getScore());
-            }
 
-        } catch (InterruptedException | ExecutionException e) {
-            e.printStackTrace();
+                // All Players have guessed.
+                System.out.println("All Players have guessed.");
+                Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "All players have guessed! The secret number was " + getSecretNumber());
+
+                for (Player p: players) {
+                    int distance = getDistance(p);
+                    if (distance == 0) {
+                        Server.sendMessageToPlayer(p, MessageType.INFO.toHeader() + "You guessed the secret number!");
+                        Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "Player " + p.getUsername() + " guessed the secret number!");
+                    }
+                    Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() +"Your guess was " + distance + " away from the secret number");
+                    Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() + "Your score is " + p.getScore());
+                }
+
+            } catch (InterruptedException | ExecutionException e) {
+                e.printStackTrace();
+            }
+            if(GAME_ROUND <=3){
+                for (Player p: players) {
+                    playerGuesses.remove(p);
+                }
+            }
         }
+
     }
 
     private void waitForGuess(Player player) {
