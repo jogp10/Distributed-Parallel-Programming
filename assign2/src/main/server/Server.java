@@ -376,11 +376,13 @@ public class Server {
             guess = Integer.parseInt(message.trim());
             if (guess < game.getMinRange() || guess > game.getMaxRange()) {
                 sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Guess out of range, try again between " + game.getMinRange() + " and " + game.getMaxRange());
+                //sendMessageToPlayer(player, MessageType.GAME_GUESS_REQUEST.toHeader() + "Please enter a valid guess");
                 return;
             }
         }
         catch (NumberFormatException e) {
             sendMessageToPlayer(player, MessageType.INFO.toHeader() +"Invalid guess");
+            //sendMessageToPlayer(player, MessageType.GAME_GUESS_REQUEST.toHeader() + "Please enter a valid guess");
             return;
         }
 

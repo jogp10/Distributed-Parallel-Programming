@@ -115,6 +115,7 @@ public class Game implements Runnable {
 
                         if (!allPlayersGuessed()) {
                             Server.sendMessageToPlayer(player, MessageType.INFO.toHeader() +"Waiting for other players to guess...");
+                            break;
                         }
                     }
                 }
@@ -152,7 +153,7 @@ public class Game implements Runnable {
     private void waitForGuess(Player player) {
         guessLock.lock();
         try {
-            while (player != null && player.isInGame() && playerGuessed(player) && !allPlayersGuessed()) {
+            while (player != null && player.isInGame() && !playerGuessed(player)) {
                 guessReceived.await();
             }
         } catch (InterruptedException e) {
