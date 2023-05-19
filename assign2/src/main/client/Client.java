@@ -126,7 +126,7 @@ public class Client {
         receivedMessage = receivedMessage.substring(0, receivedMessage.length() - 1).trim();
         if(!receivedMessage.equals(""))System.out.println(":-->" + receivedMessage);
         if(Helper.parseMessageType(receivedMessage) == MessageType.INFO){
-            System.out.println('\n' + Helper.parseMessage(receivedMessage) + '\n');
+            System.out.println('\n');
         }
         return receivedMessage;
     }

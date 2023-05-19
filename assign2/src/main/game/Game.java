@@ -119,6 +119,7 @@ public class Game implements Runnable {
                     }
                 }
                 return null;
+
             };
             tasks.add(task);
         }
@@ -151,7 +152,7 @@ public class Game implements Runnable {
     private void waitForGuess(Player player) {
         guessLock.lock();
         try {
-            while (player != null && player.isInGame() && playerGuessed(player)) {
+            while (player != null && player.isInGame() && playerGuessed(player) && !allPlayersGuessed()) {
                 guessReceived.await();
             }
         } catch (InterruptedException e) {
