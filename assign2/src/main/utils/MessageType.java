@@ -16,6 +16,7 @@ public enum MessageType {
     GAME_MODE_REQUEST,
     GAME_MODE_RESPONSE,
     GAME_GUESS_REQUEST,
+    GAME_END,
 
     DEFAULT;
     //...

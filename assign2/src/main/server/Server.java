@@ -298,7 +298,10 @@ public class Server {
             unauthenticatedPlayers.remove(player);
             if(player != null) {
                 normalQueue.add(player);
-                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected simple mode.");
+                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected simple mode.\n" +
+                        "Waiting for other players to join...\n" +
+                        "Players in queue: " + normalQueue.size() + "\n");
+                player.startWaitTimer();
             }
         }
         else if(parseMessage.equals("2")) {
@@ -306,7 +309,10 @@ public class Server {
             unauthenticatedPlayers.remove(player);
             if(player != null) {
                 rankedQueue.add(player);
-                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected ranked mode.");
+                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected ranked mode.\n" +
+                        "Waiting for other players to join...\n" +
+                        "Players in queue: " + rankedQueue.size() + "\n");
+                player.startWaitTimer();
             }
         }
         else {
@@ -376,13 +382,13 @@ public class Server {
             guess = Integer.parseInt(message.trim());
             if (guess < game.getMinRange() || guess > game.getMaxRange()) {
                 sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Guess out of range, try again between " + game.getMinRange() + " and " + game.getMaxRange());
-                //sendMessageToPlayer(player, MessageType.GAME_GUESS_REQUEST.toHeader() + "Please enter a valid guess");
+                sendMessageToPlayer(player, MessageType.GAME_GUESS_REQUEST.toHeader() + "Please enter a valid guess");
                 return;
             }
         }
         catch (NumberFormatException e) {
             sendMessageToPlayer(player, MessageType.INFO.toHeader() +"Invalid guess");
-            //sendMessageToPlayer(player, MessageType.GAME_GUESS_REQUEST.toHeader() + "Please enter a valid guess");
+            sendMessageToPlayer(player, MessageType.GAME_GUESS_REQUEST.toHeader() + "Please enter a valid guess");
             return;
         }
 
@@ -403,8 +409,15 @@ public class Server {
 
         for (Player p : game.getPlayers()) {
             p.notifyGameOver();
-            normalQueue.add(p);
-            p.startWaitTimer();
+            //normalQueue.add(p);
+            //p.startWaitTimer();
+            sendMessageToPlayer(p,MessageType.GAME_END.toHeader() + "Game Ended\n");
+            unauthenticatedPlayers.add(p);
+            sendMessageToPlayer(p, MessageType.GAME_MODE_REQUEST.toHeader() +
+                    "Please choose a matchmaking option: \n" +
+                    "1. Normal\n" +
+                    "2. Ranked\n"
+            );
         }
     }
 
