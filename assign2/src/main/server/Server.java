@@ -227,7 +227,9 @@ public class Server {
                             }
                             bytesRead = clientSocketChannel.read(buffer);
                         } while (true);
-                        handleMessage(clientSocketChannel, message);
+                        if (message.length() > 0) {
+                            handleMessage(clientSocketChannel, message);
+                        }
                     } else {
                         // TODO
                         // ??
@@ -246,7 +248,6 @@ public class Server {
 
         // todo check if this is not stupid
         // Continue executing the thread without waiting for the task to complete
-        new Thread(() -> {
             try {
                 Future<?> future = threadPool.submit(game);
                 future.get();
@@ -259,7 +260,6 @@ public class Server {
                 // Handle exception thrown by the task
                 e.printStackTrace();
             }
-        }).start();
     }
 
     private static ExecutorService getAvailableThreadPoolPlayer() {
@@ -277,6 +277,7 @@ public class Server {
 
 
     public static void handleMessage(SocketChannel clientSocketChannel, String message) {
+//        System.out.println("\nReceived message: " + message);
         message = message.substring(0, message.length() - 1).trim(); // Remove message terminator
         
         switch (Helper.parseMessageType(message)) {
@@ -653,7 +654,7 @@ public class Server {
                         String newSessionToken = Helper.generateSessionToken();
                         player.setSessionToken(newSessionToken);
                         sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Here is your session token: " + newSessionToken
-                                + "\n\tPlease use this token to reconnect to the server.");
+                                + "\n   Please use this token to reconnect to the server."); // do not use tab as it is the MESSAGE_TERMINATOR
 
 
                         player.startWaitTimer();
@@ -664,12 +665,14 @@ public class Server {
                                 "2. Ranked\n"
                         );
                         loginSuccessful = true;
+                        break;
                     }
                     else {
                         // Password incorrect
                         sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Incorrect password. Please try again.");
                         sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
                         loginSuccessful = false;
+                        break;
                     }
                 }
             }        }

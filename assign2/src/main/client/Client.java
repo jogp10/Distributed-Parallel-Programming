@@ -15,6 +15,9 @@ public class Client {
     private static final String SERVER_IP = "localhost";
     private static final int SERVER_PORT = 12345;
     private static final int BUFFER_SIZE = 1024;
+    private static Queue<StringBuilder> messageQueue = new ArrayDeque<>();
+
+
 
     public static void main(String[] args) throws IOException {
         SocketChannel socketChannel = SocketChannel.open(new InetSocketAddress(SERVER_IP, SERVER_PORT));
@@ -27,10 +30,10 @@ public class Client {
         System.out.println("Connected to server");
 
         //show an authentication sequence
-        receivedMessage = receiveServerMessage(socketChannel, buffer);
+        receivedMessage = getNextMessage(socketChannel, buffer);
         while (Helper.parseMessageType(receivedMessage) != MessageType.AUTHENTICATION_SUCCESSFUL) {
             if(Helper.parseMessageType(receivedMessage) == MessageType.INFO){
-                receivedMessage = receiveServerMessage(socketChannel, buffer);
+                receivedMessage = getNextMessage(socketChannel, buffer);
                 continue;
             }
 
@@ -55,13 +58,13 @@ public class Client {
             }
             System.out.println(message); //todo remove later
             sendMessageToServer(socketChannel, buffer, message);
-            receivedMessage = receiveServerMessage(socketChannel, buffer);
+            receivedMessage = getNextMessage(socketChannel, buffer);
         }
 
         while (!receivedMessage.equals("exit")) {
 
             message = "";
-            receivedMessage = receiveServerMessage(socketChannel, buffer);
+            receivedMessage = getNextMessage(socketChannel, buffer);
 
 
             switch (Helper.parseMessageType(receivedMessage)){
@@ -69,20 +72,35 @@ public class Client {
                     System.out.print("Enter your game mode: ");
                     message = GAME_MODE_RESPONSE.toHeader();
                     message += scanner.nextLine();
+                    sendMessageToServer(socketChannel, buffer, message);
                     break;
                 case GAME_GUESS_REQUEST:
                     System.out.print("Enter your guess: ");
                     message = MessageType.GAME_GUESS.toHeader();
                     message += scanner.nextLine();
+                    sendMessageToServer(socketChannel, buffer, message);
+                    break;
+
+                default:
                     break;
 
             }
-
-            sendMessageToServer(socketChannel, buffer, message);
-
         }
 
         socketChannel.close();
+    }
+
+    private static String getNextMessage(SocketChannel socketChannel, ByteBuffer buffer) throws IOException {
+        String receivedMessage;
+        if (messageQueue.isEmpty()) {
+            receivedMessage = receiveServerMessage(socketChannel, buffer);
+        }
+        else {
+            StringBuilder queueMessage = messageQueue.peek();
+            receivedMessage = queueMessage.append(receiveServerMessage(socketChannel, buffer)).toString();
+            messageQueue.poll();
+        }
+        return receivedMessage;
     }
 
     private static void sendMessageToServer(SocketChannel socketChannel, ByteBuffer buffer, String message) throws IOException {
@@ -114,16 +132,29 @@ public class Client {
                 receivedMessage += new String(buffer.array(), 0, bytesRead);
 
                 // if the message end character is found, exit the loop
-                if (buffer.hasArray() && buffer.array()[buffer.position() - 1] == MESSAGE_TERMINATOR) {
+                //it can be found in the middle
+                if (buffer.hasArray() && receivedMessage.contains(String.valueOf(MESSAGE_TERMINATOR))) {
                     break;
                 }
 
                 // clear the buffer to read more data
                 buffer.clear();
             }
+
+            if (bytesRead == 0 && !messageQueue.isEmpty()) {
+                break;
+            }
         }
 
-        receivedMessage = receivedMessage.substring(0, receivedMessage.length() - 1).trim();
+        String[] messages = receivedMessage.split("\\t");
+
+        receivedMessage = messages[0];
+        if (messages.length > 1) {
+            for (int i = 1; i < messages.length; i++) {
+                messageQueue.add(new StringBuilder(messages[i]));
+            }
+        }
+
         if(!receivedMessage.equals(""))System.out.println(":-->" + receivedMessage);
         if(Helper.parseMessageType(receivedMessage) == MessageType.INFO){
             System.out.println('\n');
