@@ -101,7 +101,7 @@ public class Server {
                             }
                         }
 
-                        startGame(players);
+                        startGame(players, true);
                     }
                 }
                 //todo take absent players into account
@@ -127,7 +127,7 @@ public class Server {
 
 
                     if (players.size() == MAX_PLAYERS) {
-                        startGame(players);
+                        startGame(players, false);
                     }
                 }
                 else {
@@ -232,12 +232,12 @@ public class Server {
         }
     }
 
-    private static void startGame(List<Player> players) {
+    private static void startGame(List<Player> players, boolean ranked) {
         for (Player player : players) {
             player.notifyGameStart();
         }
 
-        Game game = new Game(getAndIncrementGameCount(), players, getAvailableThreadPoolPlayer());
+        Game game = new Game(getAndIncrementGameCount(), players, ranked, getAvailableThreadPoolPlayer());
         activeGames.add(game);
 
         CompletableFuture<Void> future = CompletableFuture.runAsync(game, threadPool);

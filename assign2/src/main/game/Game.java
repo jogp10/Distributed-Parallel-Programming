@@ -14,6 +14,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class Game implements Runnable {
     private final int id;
+    private final boolean ranked;
     private final int secretNumber;
     private final List<Player> players;
     private static final int MAX_RANGE = 100;
@@ -27,8 +28,9 @@ public class Game implements Runnable {
     private final ExecutorService threadPoolPlayers;
 
 
-    public Game(int id, List<Player> players, ExecutorService executorService) {
+    public Game(int id, List<Player> players, boolean ranked, ExecutorService executorService) {
         this.id = id;
+        this.ranked = ranked;
         this.secretNumber = generateSecretNumber();
         this.players = players;
         this.threadPoolPlayers = executorService;
@@ -83,7 +85,7 @@ public class Game implements Runnable {
     public void guess(Player player, int guess) {
         playerGuesses.put(player, guess);
         int distance = getDistance(player);
-        player.updateScore(distance != 0 ? MAX_RANGE / 2 - distance : 100);
+        if(ranked) player.updateScore(distance != 0 ? MAX_RANGE / 2 - distance : 100);
     }
 
     public int getDistance(Player player) {
@@ -151,7 +153,7 @@ public class Game implements Runnable {
                         Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "Player " + p.getUsername() + " guessed the secret number!");
                     }
                     Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() +"Your guess was " + distance + " away from the secret number");
-                    Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() + "Your score is " + p.getScore());
+                    if(ranked) Server.sendMessageToPlayer(p,MessageType.INFO.toHeader() + "Your score is " + p.getScore());
                 }
 
             } catch (InterruptedException | ExecutionException e) {
