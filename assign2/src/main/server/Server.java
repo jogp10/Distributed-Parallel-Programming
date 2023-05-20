@@ -19,7 +19,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
@@ -32,8 +31,8 @@ public class Server {
     private static final int BUFFER_SIZE = 1024;
 
     private static int playerCount = 0;
-    private static Queue<Player> normalQueue = new ConcurrentLinkedQueue<>();
-    private static Queue<Player> rankedQueue = new ConcurrentLinkedQueue<>();
+    private static ConcurrentList<Player> normalQueue = new ConcurrentList<>();
+    private static ConcurrentList<Player> rankedQueue = new ConcurrentList<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static ConcurrentList<Game> activeGames = new ConcurrentList<>();
     private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
@@ -95,10 +94,7 @@ public class Server {
                         List<Player> players = new ArrayList<>();
                         for (int i = intersect.size() - 1; i >= 0; i--) {
                             System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
-                            Player player = rankedQueue.stream()
-                                    .skip(i)
-                                    .findFirst()
-                                    .orElse(null);
+                            Player player = rankedQueue.remove(i);
                             players.add(player);
                             if (players.size() >= MAX_PLAYERS) {
                                 break;
@@ -112,9 +108,7 @@ public class Server {
 
                 if (normalQueue.size() >= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                     System.out.println("Creating a new game with players: ");
-                    normalQueue.stream()
-                            .limit(MAX_PLAYERS)
-                            .forEach(player -> System.out.print(player.getUsername() + " "));
+                    normalQueue.subList(0, MAX_PLAYERS).forEach(e -> System.out.print(e.getUsername() + " "));
                     System.out.println();
 
                     List<Player> players = new ArrayList<>();
@@ -223,7 +217,10 @@ public class Server {
                             }
                             bytesRead = clientSocketChannel.read(buffer);
                         } while (true);
-                        handleMessage(clientSocketChannel, message.toString());
+
+                        if (message.length() > 0) {
+                            handleMessage(clientSocketChannel, String.valueOf(message));
+                        }
                     } else {
                         // TODO
                         // ??
@@ -268,6 +265,7 @@ public class Server {
 
 
     public static void handleMessage(SocketChannel clientSocketChannel, String message) {
+//        System.out.println("\nReceived message: " + message);
         message = message.substring(0, message.length() - 1).trim(); // Remove message terminator
         
         switch (Helper.parseMessageType(message)) {
@@ -284,8 +282,9 @@ public class Server {
     }
 
     private static void handleGameModeResponse(SocketChannel clientSocketChannel, String parseMessage) {
+        Player player = getUnauthenticatedPlayer(clientSocketChannel);
+
         if(parseMessage.equals("1")) {
-            Player player = getUnauthenticatedPlayer(clientSocketChannel);
             unauthenticatedPlayers.remove(player);
             if(player != null) {
                 normalQueue.add(player);
@@ -296,7 +295,6 @@ public class Server {
             }
         }
         else if(parseMessage.equals("2")) {
-            Player player = getUnauthenticatedPlayer(clientSocketChannel);
             unauthenticatedPlayers.remove(player);
             if(player != null) {
                 rankedQueue.add(player);
@@ -324,7 +322,7 @@ public class Server {
         sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Invalid session token.");
     }
 
-    private static boolean findPlayerInQueue(SocketChannel clientSocketChannel, String sessionToken, Queue<Player> queue) {
+    private static boolean findPlayerInQueue(SocketChannel clientSocketChannel, String sessionToken, ConcurrentList<Player> queue) {
         for(Player player : queue) {
             if(player.getSessionToken().equals(sessionToken)) {
                 if(player.getAbsent()) {
@@ -579,10 +577,10 @@ public class Server {
         return ++gameCount;
     }
 
-    public static List<Integer> findEligibleOpponents(Player player, Queue<Player> players){
+    public static List<Integer> findEligibleOpponents(Player player, ConcurrentList<Player> players){
         List<Integer> eligibleOpponents = new ArrayList<>();
         for(int i = 0; i < players.size(); i++){
-            Player opponent = ((LinkedList<Player>) players).get(i);
+            Player opponent = players.get(i);
             if (Math.abs(opponent.getScore() - player.getScore()) <= (ratio * player.getWaitingTime())) {
                 eligibleOpponents.add(i);
             }
@@ -622,7 +620,7 @@ public class Server {
                         String newSessionToken = Helper.generateSessionToken();
                         player.setSessionToken(newSessionToken);
                         sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Here is your session token: " + newSessionToken
-                                + "\n\tPlease use this token to reconnect to the server.");
+                                + "\n   Please use this token to reconnect to the server."); // do not use tab as it is the MESSAGE_TERMINATOR
 
 
                         player.startWaitTimer();
@@ -633,12 +631,14 @@ public class Server {
                                 "2. Ranked\n"
                         );
                         loginSuccessful = true;
+                        break;
                     }
                     else {
                         // Password incorrect
                         sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "Incorrect password. Please try again.");
                         sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
                         loginSuccessful = false;
+                        break;
                     }
                 }
             }        }

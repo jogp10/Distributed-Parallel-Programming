@@ -1,5 +1,7 @@
 package main.utils;
 
+import main.game.Player;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -33,6 +35,15 @@ public class ConcurrentList<T> implements Iterable<T> {
         }
     }
 
+    public Player remove(int i) {
+        lock.writeLock().lock();
+        try {
+            return (Player) list.remove(i);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     public boolean contains(T element) {
         lock.readLock().lock();
         try {
@@ -46,6 +57,15 @@ public class ConcurrentList<T> implements Iterable<T> {
         lock.readLock().lock();
         try {
             return new ArrayList<>(list);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public T get(int index) {
+        lock.readLock().lock();
+        try {
+            return list.get(index);
         } finally {
             lock.readLock().unlock();
         }
@@ -65,6 +85,15 @@ public class ConcurrentList<T> implements Iterable<T> {
         lock.readLock().lock();
         try {
             return new ArrayList<>(list).iterator();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public List<T> subList(int fromIndex, int toIndex) {
+        lock.readLock().lock();
+        try {
+            return list.subList(fromIndex, toIndex);
         } finally {
             lock.readLock().unlock();
         }
