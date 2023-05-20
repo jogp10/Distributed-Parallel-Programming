@@ -102,9 +102,11 @@ public class Game implements Runnable {
     public void run() {
 
         while(GAME_ROUND <= MAX_ROUNDS){
+            String message = "";
+            if(GAME_ROUND == 1) message = "Game started!";
             System.out.println("Game " + getId() + " Round " + GAME_ROUND);
             Server.sendMessageToPlayers(this, MessageType.INFO.toHeader() + "Round " + GAME_ROUND);
-            Server.sendMessageToPlayers(this, MessageType.GAME_GUESS_REQUEST.toHeader() + "Game started! Guess a number between " + getMinRange() + " and " + getMaxRange());
+            Server.sendMessageToPlayers(this, MessageType.GAME_GUESS_REQUEST.toHeader() + message + " Guess a number between " + getMinRange() + " and " + getMaxRange());
 
             List<Callable<Void>> tasks = new ArrayList<>();
             for (Player player : players) {
