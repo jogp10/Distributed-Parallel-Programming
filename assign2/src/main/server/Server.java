@@ -170,24 +170,7 @@ public class Server {
                     catch (SocketException e) {
                         // Exceção não ocorreu ( quando ligação é terminada, bytesRead = -1 )
                         // Handle the "Connection reset" exception
-                        System.err.println("Connection reset by peer: " + e.getMessage());
-                        key.cancel();
-                        Player player = getPlayer(clientSocketChannel);
-
-                        if(player != null) {
-                            String username = player.getUsername();
-                            updatePlayerEntry(player);
-                            if (player.isInQueue()) {
-                                suspendPlayer(player);
-                            }
-                            else if (player.isInGame()) {
-                                removePlayerFromGame(player);
-                            }
-                            System.err.println("Player " + username + " disconnected");
-                        }
-                        else {
-                            System.err.println("An error occurred while disconnecting a player");
-                        }
+                        handleDisconnection(key, clientSocketChannel, e);
 
                     }
                     catch (IOException e) {
@@ -221,11 +204,34 @@ public class Server {
                             handleMessage(clientSocketChannel, String.valueOf(message));
                         }
                     } else {
-                        // TODO
-                        // ??
+                        handleDisconnection(key, clientSocketChannel, new SocketException("Connection reset"));
                     }
                 }
             }
+        }
+    }
+
+    private static void handleDisconnection(SelectionKey key, SocketChannel clientSocketChannel, SocketException e) {
+        System.err.println("Connection reset by peer: " + e.getMessage());
+        key.cancel();
+        Player player = getPlayer(clientSocketChannel);
+
+        if(player != null) {
+            String username = player.getUsername();
+            updatePlayerEntry(player);
+            if (player.isInQueue()) {
+                suspendPlayer(player);
+            }
+            else if (player.isInGame()) {
+                removePlayerFromGame(player);
+            }
+            else {
+                removeUnauthenticatedPlayer(player);
+            }
+            System.err.println("Player " + username + " disconnected");
+        }
+        else {
+            System.err.println("An error occurred while disconnecting a player");
         }
     }
 
@@ -312,7 +318,7 @@ public class Server {
         else if(parseMessage.equals("quit")) {
             unauthenticatedPlayers.remove(player);
             if (player != null) {
-                removePLayerFromServer(player);
+                removePlayerFromServer(player);
             }
         }
         else {
@@ -321,7 +327,7 @@ public class Server {
 
     }
 
-    private static void removePLayerFromServer(Player player) {
+    private static void removePlayerFromServer(Player player) {
         removePlayer(player);
         updatePlayerEntry(player);
         sendMessageToPlayer(player, MessageType.DISCONNECT.toHeader());
@@ -348,7 +354,8 @@ public class Server {
                     player.setSocketChannel(clientSocketChannel);
                     //add player to authenticatedPlayers
                     //send message to player
-                    sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue.");
+                    sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader());
+                    sendMessageToPlayer(player, MessageType.INFO.toHeader() + "Successfully rejoined the wait queue.");
                 }
                 else {
                     sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Player is already in the wait queue.");
@@ -432,14 +439,14 @@ public class Server {
         //check that the player is not currently loggedIn
         if(isLoggedIn(username)){
             sendMessage(clientSocketChannel, MessageType.INFO.toHeader() + "The user is already logged in.");
-            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Already logged in!");
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
             return;
         }
 
-        boolean loginFinished = readFileToLookupPlayer(username , password, clientSocketChannel);
+        boolean loginFinished = login(username , password, clientSocketChannel);
 
         if (!loginFinished) {
-            writeNewPlayerToFile(username, password, clientSocketChannel);
+            register(username, password, clientSocketChannel);
         }
 
     }
@@ -455,8 +462,8 @@ public class Server {
             // remove from normal queue or ranked queue
             normalQueue.remove(player);
             rankedQueue.remove(player);
+            unauthenticatedPlayers.remove(player);
             removePlayerFromGame(player);
-            player = null;
         }
     }
 
@@ -474,8 +481,11 @@ public class Server {
         if (player != null) {
             player.setInGame(false);
             player.setInQueue(false);
-            player = null;
         }
+    }
+
+    private static void removeUnauthenticatedPlayer(Player player) {
+        unauthenticatedPlayers.remove(player);
     }
 
     private static void suspendPlayer(Player player){
@@ -504,6 +514,12 @@ public class Server {
                 }
             }
         }
+        for (Player player: unauthenticatedPlayers){
+            if (player.getUsername().equalsIgnoreCase(username)){
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -550,6 +566,7 @@ public class Server {
         }
         return null;
     }
+
 
     public static Game getGame(Player player) {
         for (Game game : activeGames) {
@@ -607,7 +624,7 @@ public class Server {
         return eligibleOpponents;
     }
 
-    public static boolean readFileToLookupPlayer(String username, String password, SocketChannel clientSocketChannel) {
+    public static boolean login(String username, String password, SocketChannel clientSocketChannel) {
         // Acquire the lock for reading
         databaseLock.lock();
         String csvFile = "users.csv";
@@ -672,7 +689,7 @@ public class Server {
         return loginSuccessful;
     }
 
-    public static void writeNewPlayerToFile(String username, String password, SocketChannel clientSocketChannel) {
+    public static void register(String username, String password, SocketChannel clientSocketChannel) {
         // Acquire the lock for writing
         databaseLock.lock();
         String csvFile = "users.csv";

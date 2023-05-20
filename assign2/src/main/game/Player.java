@@ -12,7 +12,7 @@ import static main.utils.Helper.MESSAGE_TERMINATOR;
 public class Player {
     private final int id;
     private int score;
-    private String username;
+    private String username = "";
     private String sessionToken;
     private int gamesPlayed;
     boolean absent = false;

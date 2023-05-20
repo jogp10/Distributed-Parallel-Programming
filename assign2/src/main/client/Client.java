@@ -32,6 +32,7 @@ public class Client {
         //show an authentication sequence
         receivedMessage = getNextMessage(socketChannel, buffer);
         while (Helper.parseMessageType(receivedMessage) != MessageType.AUTHENTICATION_SUCCESSFUL) {
+            System.out.println(Helper.parseMessage(receivedMessage) + "\n");
             if(Helper.parseMessageType(receivedMessage) == MessageType.INFO){
                 receivedMessage = getNextMessage(socketChannel, buffer);
                 continue;
@@ -56,7 +57,7 @@ public class Client {
             } else {
                 message = MessageType.AUTHENTICATION_ATTEMPT_TOKEN.toHeader() + message;
             }
-            System.out.println(message); //todo remove later
+//            System.err.println(message); //todo remove later
             sendMessageToServer(socketChannel, buffer, message);
             receivedMessage = getNextMessage(socketChannel, buffer);
         }
@@ -69,12 +70,14 @@ public class Client {
 
             switch (Helper.parseMessageType(receivedMessage)){
                 case GAME_MODE_REQUEST:
+                    System.out.println(Helper.parseMessage(receivedMessage) + "\n");
                     System.out.print("Enter your game mode: ");
                     message = GAME_MODE_RESPONSE.toHeader();
                     message += scanner.nextLine();
                     sendMessageToServer(socketChannel, buffer, message);
                     break;
                 case GAME_GUESS_REQUEST:
+                    System.out.println(Helper.parseMessage(receivedMessage) + "\n");
                     System.out.print("Enter your guess: ");
                     message = MessageType.GAME_GUESS.toHeader();
                     message += scanner.nextLine();
@@ -84,6 +87,9 @@ public class Client {
                     System.out.println("Disconnected from server");
                     socketChannel.close();
                     return;
+                case INFO, GAME_END:
+                    System.out.println(Helper.parseMessage(receivedMessage) + "\n");
+                    break;
                 default:
                     break;
 
@@ -170,10 +176,7 @@ public class Client {
             }
         }
 
-        if(!receivedMessage.equals(""))System.out.println(":-->" + receivedMessage);
-        if(Helper.parseMessageType(receivedMessage) == MessageType.INFO){
-            System.out.println('\n');
-        }
+//        if(!receivedMessage.equals(""))System.out.println(":-->" + receivedMessage);
         return receivedMessage;
     }
 }
