@@ -306,10 +306,23 @@ public class Server {
                 player.startWaitTimer();
             }
         }
+        else if(parseMessage.equals("quit")) {
+            unauthenticatedPlayers.remove(player);
+            if (player != null) {
+                removePLayerFromServer(player);
+            }
+        }
         else {
             sendMessage(clientSocketChannel, MessageType.GAME_MODE_REQUEST.toHeader() + "Invalid game mode.");
         }
 
+    }
+
+    private static void removePLayerFromServer(Player player) {
+        removePlayer(player);
+        updatePlayerEntry(player);
+        sendMessageToPlayer(player, MessageType.DISCONNECT.toHeader());
+        System.err.println("Player " + player.getUsername() + " disconnected");
     }
 
     private static void handleAuthenticationToken(SocketChannel clientSocketChannel, String parseMessage) {
@@ -392,7 +405,8 @@ public class Server {
             sendMessageToPlayer(p, MessageType.GAME_MODE_REQUEST.toHeader() +
                     "Please choose a matchmaking option: \n" +
                     "1. Normal\n" +
-                    "2. Ranked\n"
+                    "2. Ranked\n" +
+                    "Type 'quit' to leave the game"
             );
         }
     }
@@ -630,7 +644,8 @@ public class Server {
                         // Choose matchmaking
                         sendMessageToPlayer(player, MessageType.GAME_MODE_REQUEST.toHeader() + "Please choose a matchmaking option: \n" +
                                 "1. Normal\n" +
-                                "2. Ranked\n"
+                                "2. Ranked\n" +
+                                "Type 'quit' to leave the game"
                         );
                         loginSuccessful = true;
                         break;
@@ -679,7 +694,8 @@ public class Server {
             // Choose matchmaking
             sendMessageToPlayer(player, MessageType.GAME_MODE_REQUEST.toHeader() + "Please choose a matchmaking option: \n" +
                     "1. Normal\n" +
-                    "2. Ranked\n"
+                    "2. Ranked\n" +
+                    "Type 'quit' to leave the game"
             );
 
         } catch (IOException e) {

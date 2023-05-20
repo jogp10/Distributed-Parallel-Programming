@@ -80,7 +80,10 @@ public class Client {
                     message += scanner.nextLine();
                     sendMessageToServer(socketChannel, buffer, message);
                     break;
-
+                case DISCONNECT:
+                    System.out.println("Disconnected from server");
+                    socketChannel.close();
+                    return;
                 default:
                     break;
 
