@@ -20,7 +20,7 @@ public class Game implements Runnable {
     private static final int MAX_RANGE = 100;
     private static final int MIN_RANGE = 1;
     private int GAME_ROUND = 1;
-    private int MAX_ROUNDS = 3;
+    private static final int MAX_ROUNDS = 3;
     private final ConcurrentHashMap<Player, Integer> playerGuesses = new ConcurrentHashMap<Player, Integer>();
     private final Lock guessLock = new ReentrantLock();
     private final Condition guessReceived = guessLock.newCondition();

@@ -3,6 +3,7 @@ package main.server;
 
 import main.game.Player;
 import main.game.Game;
+import main.utils.ConcurrentList;
 import main.utils.Helper;
 import main.utils.MessageType;
 
@@ -13,10 +14,7 @@ import java.nio.channels.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -35,11 +33,10 @@ public class Server {
     private static final int BUFFER_SIZE = 1024;
 
     private static int playerCount = 0;
-    private static List<Player> normalQueue = new ArrayList<>();
-    private static List<Player> rankedQueue = new ArrayList<>();
+    private static Queue<Player> normalQueue = new ConcurrentLinkedQueue<>();
+    private static Queue<Player> rankedQueue = new ConcurrentLinkedQueue<>();
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
-    private static List<Game> activeGames = new ArrayList<>();
-    private static Lock gamesLock = new ReentrantLock();
+    private static ConcurrentList<Game> activeGames = new ConcurrentList<>();
     private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
     private static final List<ExecutorService> threadPoolPlayers = new ArrayList<>(Collections.nCopies(MAX_GAMES, Executors.newFixedThreadPool(MAX_PLAYERS)));
     private static final List<Boolean> threadPoolPlayersAvailability = new ArrayList<>(Collections.nCopies(MAX_GAMES, true));
@@ -97,7 +94,10 @@ public class Server {
                         int numPlayers = 0;
                         for (int i = intersect.size() - 1; i >= 0; i--) {
                             System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
-                            Player player = rankedQueue.remove(i);
+                            Player player = rankedQueue.stream()
+                                    .skip(i)
+                                    .findFirst()
+                                    .orElse(null);
                             players.add(player);
                             player.notifyGameStart();
                             numPlayers++;
@@ -113,7 +113,9 @@ public class Server {
 
                 if (normalQueue.size() >= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                     System.out.println("Creating a new game with players: ");
-                    normalQueue.subList(0, MAX_PLAYERS).forEach(e -> System.out.print(e.getUsername() + " "));
+                    normalQueue.stream()
+                            .limit(MAX_PLAYERS)
+                            .forEach(player -> System.out.print(player.getUsername() + " "));
                     System.out.println();
 
                     List<Player> players = new ArrayList<>();
@@ -241,9 +243,7 @@ public class Server {
 
     private static void startGame(List<Player> players) {
         Game game = new Game(getAndIncrementGameCount(), players, getAvailableThreadPoolPlayer());
-        gamesLock.lock();
         activeGames.add(game);
-        gamesLock.unlock();
 
 
         // todo check if this is not stupid
@@ -327,23 +327,15 @@ public class Server {
         String sessionToken = tokens[0];
 
         //iterate waitQueue and find the player with the sessionToken
-        for(Player player : normalQueue) {
-            if(player.getSessionToken().equals(sessionToken)) { 
-                if(player.getAbsent()) {
-                    unsuspendPlayer(player);
-                    player.setSocketChannel(clientSocketChannel);
-                    //add player to authenticatedPlayers
-                    //send message to player
-                    sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue.");
-                    return;
-                }
-                else {
-                    sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Player is already in the wait queue.");
-                    return;
-                }
-            }
-        }
-        for(Player player : rankedQueue) {
+        if (findPlayerInQueue(clientSocketChannel, sessionToken, normalQueue)) return;
+        if (findPlayerInQueue(clientSocketChannel, sessionToken, rankedQueue)) return;
+
+        //in case the player was not found in the waitQueue
+        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Invalid session token.");
+    }
+
+    private static boolean findPlayerInQueue(SocketChannel clientSocketChannel, String sessionToken, Queue<Player> queue) {
+        for(Player player : queue) {
             if(player.getSessionToken().equals(sessionToken)) {
                 if(player.getAbsent()) {
                     unsuspendPlayer(player);
@@ -351,17 +343,14 @@ public class Server {
                     //add player to authenticatedPlayers
                     //send message to player
                     sendMessageToPlayer(player, MessageType.AUTHENTICATION_SUCCESSFUL.toHeader() + "Successfully rejoined the wait queue.");
-                    return;
                 }
                 else {
                     sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Player is already in the wait queue.");
-                    return;
                 }
+                return true;
             }
         }
-
-        //in case the player was not found in the waitQueue
-        sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Invalid session token.");
+        return false;
     }
 
     public static void handleGuessMessage(SocketChannel clientSocketChannel, String message) {
@@ -402,11 +391,9 @@ public class Server {
     }
 
     private static void endGame(Game game) {
-        gamesLock.lock();
         activeGames.remove(game);
         int threadPoolIndex = threadPoolPlayers.indexOf(game.getThreadPoolPlayers());
         threadPoolPlayersAvailability.set(threadPoolIndex, true);
-        gamesLock.unlock();
 
         for (Player p : game.getPlayers()) {
             p.notifyGameOver();
@@ -460,9 +447,7 @@ public class Server {
                 game.removePlayer(player);
                 sendMessageToPlayers(game, MessageType.INFO.toHeader() + "Player " + player.getUsername() + " has left the game");
                 if (game.getPlayers().isEmpty()) {
-                    gamesLock.lock();
                     activeGames.remove(game);
-                    gamesLock.unlock();
                 }
             }
             player.setInGame(false);
@@ -612,10 +597,11 @@ public class Server {
         return ++gameCount;
     }
 
-    public static List<Integer> findEligibleOpponents(Player player, List<Player> Players){
+    public static List<Integer> findEligibleOpponents(Player player, Queue<Player> players){
         List<Integer> eligibleOpponents = new ArrayList<>();
-        for(int i = 0; i < Players.size(); i++){
-            if(abs(Players.get(i).getScore() - player.getScore()) <= (ratio * player.getWaitingTime())){
+        for(int i = 0; i < players.size(); i++){
+            Player opponent = ((LinkedList<Player>) players).get(i);
+            if (Math.abs(opponent.getScore() - player.getScore()) <= (ratio * player.getWaitingTime())) {
                 eligibleOpponents.add(i);
             }
         }
