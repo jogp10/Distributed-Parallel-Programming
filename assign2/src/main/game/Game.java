@@ -1,6 +1,7 @@
 package main.game;
 
 import main.server.Server;
+import main.utils.ConcurrentList;
 import main.utils.MessageType;
 
 import java.util.*;
@@ -16,7 +17,7 @@ public class Game implements Runnable {
     private final int id;
     private final boolean ranked;
     private final int secretNumber;
-    private final List<Player> players;
+    private final ConcurrentList<Player> players;
     private static final int MAX_RANGE = 100;
     private static final int MIN_RANGE = 1;
     private int GAME_ROUND;
@@ -28,7 +29,7 @@ public class Game implements Runnable {
     private final ExecutorService threadPoolPlayers;
 
 
-    public Game(int id, List<Player> players, boolean ranked, ExecutorService executorService) {
+    public Game(int id, ConcurrentList<Player> players, boolean ranked, ExecutorService executorService) {
         this.id = id;
         this.ranked = ranked;
         this.secretNumber = generateSecretNumber();
@@ -49,7 +50,7 @@ public class Game implements Runnable {
         return secretNumber;
     }
 
-    public List<Player> getPlayers() {
+    public ConcurrentList<Player> getPlayers() {
         return players;
     }
 
@@ -201,6 +202,12 @@ public class Game implements Runnable {
                 lock.unlock();
             }
         }
+    }
+
+    public void signalDisconnected(Player player) {
+        player.setInGame(false);
+        players.remove(player);
+        signalGuessReceived(player);
     }
 
     public ExecutorService getThreadPoolPlayers() {

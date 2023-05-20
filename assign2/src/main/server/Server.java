@@ -91,7 +91,7 @@ public class Server {
                     //Create a new game with the intersected players
                     if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                         System.out.println("Creating a new game with players: " + intersect);
-                        List<Player> players = new ArrayList<>();
+                        ConcurrentList<Player> players = new ConcurrentList<>();
                         for (int i = intersect.size() - 1; i >= 0; i--) {
                             System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
                             Player player = rankedQueue.remove(i);
@@ -111,7 +111,7 @@ public class Server {
                     normalQueue.subList(0, MAX_PLAYERS).forEach(e -> System.out.print(e.getUsername() + " "));
                     System.out.println();
 
-                    List<Player> players = new ArrayList<>();
+                    ConcurrentList<Player> players = new ConcurrentList<>();
                     Iterator<Player> iterator = normalQueue.iterator();
                     while (iterator.hasNext() && players.size() < MAX_PLAYERS) {
                         Player player = iterator.next();
@@ -232,7 +232,7 @@ public class Server {
         }
     }
 
-    private static void startGame(List<Player> players, boolean ranked) {
+    private static void startGame(ConcurrentList<Player> players, boolean ranked) {
         for (Player player : players) {
             player.notifyGameStart();
         }
@@ -468,13 +468,12 @@ public class Server {
     private static void removePlayerFromGame(Player player) {
         Game game = getGame(player);
         if (game != null) {
-            game.removePlayer(player);
+            game.signalDisconnected(player);
             sendMessageToPlayers(game, MessageType.INFO.toHeader() + "Player " + player.getUsername() + " has left the game");
-            if (game.getPlayers().isEmpty()) {
+            if (game.getPlayers().size() == 0) {
                 activeGames.remove(game);
             }
         }
-        player.setInGame(false);
     }
 
     private static void removePlayerNotInQueue(Player player){
