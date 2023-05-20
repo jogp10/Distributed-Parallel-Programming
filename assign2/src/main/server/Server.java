@@ -267,7 +267,15 @@ public class Server {
 
 
     public static void handleMessage(SocketChannel clientSocketChannel, String message) {
-//        System.out.println("\nReceived message: " + message);
+
+        /*if (getPlayer(clientSocketChannel) != null) {
+            System.out.println("\nReceived message from player " + getPlayer(clientSocketChannel).getUsername() + ": " + message);
+        }
+        else {
+            System.out.println("\nReceived message from unauthenticated player: " + message);
+        }
+        */
+
         message = message.substring(0, message.length() - 1).trim(); // Remove message terminator
         
         switch (Helper.parseMessageType(message)) {
@@ -414,9 +422,17 @@ public class Server {
     private static void handleAuthentication(SocketChannel clientSocketChannel, String parseMessage) {
         //split message on ';'
         String[] tokens = parseMessage.split(";");
-        String username = tokens[0];
-        String password = tokens[1];
+        String username;
+        String password;
         String csvFile = "users.csv";
+        try {
+            username = tokens[0];
+            password = tokens[1];
+        }
+        catch (ArrayIndexOutOfBoundsException e) {
+            sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader() + "Invalid message format.");
+            return;
+        }
 
         //check that the player is not currently loggedIn
         if(isLoggedIn(username)){

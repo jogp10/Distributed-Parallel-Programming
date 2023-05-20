@@ -152,8 +152,20 @@ public class Client {
         String[] messages = receivedMessage.split("\\t");
 
         receivedMessage = messages[0];
+
+        int startIndex = 1;
+
+        if (!messageQueue.isEmpty()) {
+            //if received;«Message starts wit <, then we put everything in the queue and return ""
+            if (receivedMessage.length() > 0 && receivedMessage.charAt(0) == '<') {
+                messageQueue.add(new StringBuilder(receivedMessage));
+                receivedMessage = "";
+                startIndex = 0;
+            }
+        }
+
         if (messages.length > 1) {
-            for (int i = 1; i < messages.length; i++) {
+            for (int i = startIndex; i < messages.length; i++) {
                 messageQueue.add(new StringBuilder(messages[i]));
             }
         }
