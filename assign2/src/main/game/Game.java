@@ -80,7 +80,7 @@ public class Game implements Runnable {
     }
 
     public boolean playerGuessed(Player player) {
-        return playerGuesses.containsKey(player);
+        return !player.isInGame() || playerGuesses.containsKey(player);
     }
 
     public void guess(Player player, int guess) {
@@ -119,8 +119,7 @@ public class Game implements Runnable {
                 Callable<Void> task = () -> {
                     while (!allPlayersGuessed() && player.isInGame()) { // removed && !playerGuessed(player) because most times the "Waiting..." message was not printing"
                         waitForGuess(player);
-
-                        if (playerGuessed(player)) {
+                        if (playerGuessed(player) && player.isInGame()) { //playerGuessed will return true for disconnected players
                             System.out.println("Player " + player.getUsername() + " has guessed.");
                             int guess = playerGuesses.get(player);
                             guess(player, guess);

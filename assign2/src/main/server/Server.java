@@ -168,13 +168,11 @@ public class Server {
                         bytesRead = clientSocketChannel.read(buffer);
                     }
                     catch (SocketException e) {
-                        // TODO: Remover completamente se estiver num jogo, suspenso se em queue
                         // Exceção não ocorreu ( quando ligação é terminada, bytesRead = -1 )
                         // Handle the "Connection reset" exception
                         System.err.println("Connection reset by peer: " + e.getMessage());
                         key.cancel();
                         Player player = getPlayer(clientSocketChannel);
-                        //todo change from queue  to everyplace
 
                         if(player != null) {
                             String username = player.getUsername();
@@ -182,14 +180,13 @@ public class Server {
                             if (player.isInQueue()) {
                                 suspendPlayer(player);
                             }
-                            else {
-                                removePlayerNotInQueue(player);
+                            else if (player.isInGame()) {
+                                removePlayerFromGame(player);
                             }
                             System.err.println("Player " + username + " disconnected");
                         }
                         else {
-                            System.err.println("Must have been the wind...");
-                            // todo do not leave this here
+                            System.err.println("An error occurred while disconnecting a player");
                         }
 
                     }
@@ -268,14 +265,12 @@ public class Server {
 
     public static void handleMessage(SocketChannel clientSocketChannel, String message) {
 
-        /*if (getPlayer(clientSocketChannel) != null) {
+        if (getPlayer(clientSocketChannel) != null) {
             System.out.println("\nReceived message from player " + getPlayer(clientSocketChannel).getUsername() + ": " + message);
         }
         else {
             System.out.println("\nReceived message from unauthenticated player: " + message);
         }
-        */
-
         message = message.substring(0, message.length() - 1).trim(); // Remove message terminator
         
         switch (Helper.parseMessageType(message)) {
@@ -475,13 +470,6 @@ public class Server {
             }
         }
     }
-
-    private static void removePlayerNotInQueue(Player player){
-        if (player != null) {
-            removePlayerFromGame(player);
-        }
-    }
-
     private static void removeAbsentPlayer(Player player){
         if (player != null) {
             player.setInGame(false);
