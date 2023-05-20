@@ -115,7 +115,7 @@ public class Server {
                     Iterator<Player> iterator = normalQueue.iterator();
                     while (iterator.hasNext() && players.size() < MAX_PLAYERS) {
                         Player player = iterator.next();
-                        iterator.remove(); // this will remove the player from the queue
+                        normalQueue.remove(player); // remove the player from the queue
 
                         if (player.getAbsent()) {
                             removeAbsentPlayer(player);
@@ -123,6 +123,8 @@ public class Server {
                         }
                         players.add(player);
                     }
+
+
 
                     if (players.size() == MAX_PLAYERS) {
                         startGame(players);
