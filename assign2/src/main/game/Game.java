@@ -3,9 +3,8 @@ package main.game;
 import main.server.Server;
 import main.utils.MessageType;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
+
 import main.utils.ConcurrentHashMap;
 
 import java.util.concurrent.*;
@@ -21,9 +20,10 @@ public class Game implements Runnable {
     private static final int MIN_RANGE = 1;
     private int GAME_ROUND = 1;
     private static final int MAX_ROUNDS = 3;
-    private final ConcurrentHashMap<Player, Integer> playerGuesses = new ConcurrentHashMap<Player, Integer>();
-    private final Lock guessLock = new ReentrantLock();
-    private final Condition guessReceived = guessLock.newCondition();
+    private final ConcurrentHashMap<Player, Integer> playerGuesses = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Player, Lock> playerLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Player, Condition> playerConditions = new ConcurrentHashMap<>();
+
     private final ExecutorService threadPoolPlayers;
 
 
@@ -111,7 +111,7 @@ public class Game implements Runnable {
                     waitForGuess(player);
 
                     if (playerGuessed(player)) {
-                        System.out.println("Player " + player.getUsername() + " has guessed.");;
+                        System.out.println("Player " + player.getUsername() + " has guessed.");
                         int guess = playerGuesses.get(player);
                         guess(player, guess);
 
@@ -153,24 +153,39 @@ public class Game implements Runnable {
     }
 
     private void waitForGuess(Player player) {
-        guessLock.lock();
+        Lock lock = playerLocks.get(player);
+        if (lock == null) {
+            lock = new ReentrantLock();
+            playerLocks.put(player, lock);
+        }
+
+        Condition condition = lock.newCondition();
+        playerConditions.put(player, condition);
+
+        lock.lock();
         try {
-            while (player != null && player.isInGame() && !playerGuessed(player)) {
-                guessReceived.await();
+            while (!playerGuessed(player)) {
+                condition.await();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
-            guessLock.unlock();
+            lock.unlock();
         }
     }
 
-    public void signalGuessReceived() {
-        guessLock.lock();
-        try {
-            guessReceived.signalAll();
-        } finally {
-            guessLock.unlock();
+    public void signalGuessReceived(Player player) {
+        Lock lock = playerLocks.get(player);
+        if (lock != null) {
+            lock.lock();
+            try {
+                Condition condition = playerConditions.get(player);
+                if (condition != null) {
+                    condition.signal();
+                }
+            } finally {
+                lock.unlock();
+            }
         }
     }
 

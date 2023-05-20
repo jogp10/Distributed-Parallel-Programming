@@ -7,6 +7,10 @@ import main.utils.ConcurrentList;
 import main.utils.Helper;
 import main.utils.MessageType;
 
+import static java.lang.Thread.sleep;
+import static main.utils.Helper.MESSAGE_TERMINATOR;
+import static main.utils.Helper.findFirst;
+
 import java.io.*;
 import java.net.*;
 import java.nio.*;
@@ -14,17 +18,12 @@ import java.nio.channels.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-
-import static main.utils.Helper.MESSAGE_TERMINATOR;
-
-import static java.lang.Math.abs;
-
-import static main.utils.Helper.findFirst;
-
-
 
 public class Server {
     private static final int PORT = 12345;
@@ -38,7 +37,8 @@ public class Server {
     private static List<Player> unauthenticatedPlayers = new ArrayList<>();
     private static ConcurrentList<Game> activeGames = new ConcurrentList<>();
     private static final ExecutorService threadPool = Executors.newFixedThreadPool(MAX_GAMES);
-    private static final List<ExecutorService> threadPoolPlayers = new ArrayList<>(Collections.nCopies(MAX_GAMES, Executors.newFixedThreadPool(MAX_PLAYERS)));
+    private static final List<ExecutorService> threadPoolPlayers = new ArrayList<>(MAX_GAMES);
+
     private static final List<Boolean> threadPoolPlayersAvailability = new ArrayList<>(Collections.nCopies(MAX_GAMES, true));
     private static int gameCount = 0;
     private static double ratio = 10;
@@ -54,13 +54,15 @@ public class Server {
         Selector selector = Selector.open();
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
+        // Create a new ExecutorService for each index in the threadPoolPlayers list
+        for (int i = 0; i < MAX_GAMES; i++) {
+            threadPoolPlayers.add(Executors.newFixedThreadPool(MAX_PLAYERS));
+        }
+
+        Runtime.getRuntime().addShutdownHook(new Thread(Server::updateAllPlayers));
+
         System.out.println("Server is up and running");
 
-        Runtime.getRuntime().addShutdownHook(new Thread() {
-            public void run() {
-                updateAllPlayers();
-            }
-        });
 
         new Thread(() -> {
             while (true) {
@@ -91,7 +93,6 @@ public class Server {
                     if(intersect.size()>= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                         System.out.println("Creating a new game with players: " + intersect);
                         List<Player> players = new ArrayList<>();
-                        int numPlayers = 0;
                         for (int i = intersect.size() - 1; i >= 0; i--) {
                             System.out.println("Removing player " + intersect.get(i) + " from the normal queue");
                             Player player = rankedQueue.stream()
@@ -99,9 +100,7 @@ public class Server {
                                     .findFirst()
                                     .orElse(null);
                             players.add(player);
-                            player.notifyGameStart();
-                            numPlayers++;
-                            if (numPlayers >= MAX_PLAYERS) {
+                            if (players.size() >= MAX_PLAYERS) {
                                 break;
                             }
                         }
@@ -120,8 +119,7 @@ public class Server {
 
                     List<Player> players = new ArrayList<>();
                     Iterator<Player> iterator = normalQueue.iterator();
-                    int playersAdded = 0;
-                    while (iterator.hasNext() && playersAdded < MAX_PLAYERS) {
+                    while (iterator.hasNext() && players.size() < MAX_PLAYERS) {
                         Player player = iterator.next();
                         iterator.remove(); // this will remove the player from the queue
 
@@ -130,23 +128,19 @@ public class Server {
                             continue;
                         }
                         players.add(player);
-                        player.stopWaitTimer();
-                        player.setInGame(true);
-                        playersAdded++;
                     }
 
-                    if (playersAdded == MAX_PLAYERS) {
+                    if (players.size() == MAX_PLAYERS) {
                         startGame(players);
                     }
                 }
                 else {
-                    //todo delete
-//                    System.out.println("Not enough players in the queue");
+                    //todo change
                 }
 
                 // Sleep for some time to avoid high CPU usage
                 try {
-                    Thread.sleep(1000);
+                    sleep(1000);
                 } catch (InterruptedException e) {
                     // Handle the exception
                 }
@@ -209,7 +203,7 @@ public class Server {
                     }
 
                     if (bytesRead != -1) {
-                        String message = "";
+                        StringBuilder message = new StringBuilder();
                         do {
                             // attempt to read data from the socket channel
                             // if no bytes were read, the connection has been lost
@@ -219,7 +213,7 @@ public class Server {
 
                             if (buffer.position() > 0) {
                                 // convert the buffer to a string and append it to the message
-                                message += new String(buffer.array(), 0, bytesRead);
+                                message.append(new String(buffer.array(), 0, bytesRead));
                                 // if the message end character is found, exit the loop
                                 if (buffer.hasArray() && buffer.array()[buffer.position() - 1] == MESSAGE_TERMINATOR) {
                                     break;
@@ -229,7 +223,7 @@ public class Server {
                             }
                             bytesRead = clientSocketChannel.read(buffer);
                         } while (true);
-                        handleMessage(clientSocketChannel, message);
+                        handleMessage(clientSocketChannel, message.toString());
                     } else {
                         // TODO
                         // ??
@@ -240,30 +234,27 @@ public class Server {
     }
 
     private static void startGame(List<Player> players) {
+        for (Player player : players) {
+            player.notifyGameStart();
+        }
+
         Game game = new Game(getAndIncrementGameCount(), players, getAvailableThreadPoolPlayer());
         activeGames.add(game);
 
-
-        // todo check if this is not stupid
-        // Continue executing the thread without waiting for the task to complete
-        new Thread(() -> {
-            try {
-                Future<?> future = threadPool.submit(game);
-                future.get();
+        CompletableFuture<Void> future = CompletableFuture.runAsync(game, threadPool);
+        future.whenComplete((result, exception) -> {
+            if (exception == null) {
                 System.out.println("Game " + game.getId() + " finished");
                 endGame(game);
-            } catch (InterruptedException e) {
-                // Handle interruption
-                e.printStackTrace();
-            } catch (ExecutionException e) {
-                // Handle exception thrown by the task
-                e.printStackTrace();
+            } else {
+                // Handle exception
+                exception.printStackTrace();
             }
-        }).start();
+        });
     }
 
     private static ExecutorService getAvailableThreadPoolPlayer() {
-        int availableThreadPoolIndex = -1;
+        int availableThreadPoolIndex;
         synchronized (threadPoolPlayersAvailability) {
             availableThreadPoolIndex = findFirst(threadPoolPlayersAvailability,  true);
             if (availableThreadPoolIndex == -1) {
@@ -386,7 +377,7 @@ public class Server {
 
     private static void notifyGuessReceived(Game game, Player player, int guess) {
         game.setPlayerGuess(player, guess);
-        game.signalGuessReceived();
+        game.signalGuessReceived(player);
     }
 
     private static void endGame(Game game) {
@@ -396,8 +387,6 @@ public class Server {
 
         for (Player p : game.getPlayers()) {
             p.notifyGameOver();
-            //normalQueue.add(p);
-            //p.startWaitTimer();
             sendMessageToPlayer(p,MessageType.GAME_END.toHeader() + "Game Ended\n");
             unauthenticatedPlayers.add(p);
             sendMessageToPlayer(p, MessageType.GAME_MODE_REQUEST.toHeader() +
@@ -441,30 +430,26 @@ public class Server {
             // remove from normal queue or ranked queue
             normalQueue.remove(player);
             rankedQueue.remove(player);
-            Game game = getGame(player);
-            if (game != null) {
-                game.removePlayer(player);
-                sendMessageToPlayers(game, MessageType.INFO.toHeader() + "Player " + player.getUsername() + " has left the game");
-                if (game.getPlayers().isEmpty()) {
-                    activeGames.remove(game);
-                }
-            }
-            player.setInGame(false);
+            removePlayerFromGame(player);
             player = null;
         }
     }
 
+    private static void removePlayerFromGame(Player player) {
+        Game game = getGame(player);
+        if (game != null) {
+            game.removePlayer(player);
+            sendMessageToPlayers(game, MessageType.INFO.toHeader() + "Player " + player.getUsername() + " has left the game");
+            if (game.getPlayers().isEmpty()) {
+                activeGames.remove(game);
+            }
+        }
+        player.setInGame(false);
+    }
+
     private static void removePlayerNotInQueue(Player player){
         if (player != null) {
-            Game game = getGame(player);
-            if (game != null) {
-                game.removePlayer(player);
-                sendMessageToPlayers(game, MessageType.INFO.toHeader() + "Player " + player.getUsername() + " has left the game");
-                if (game.getPlayers().isEmpty()) {
-                    activeGames.remove(game);
-                }
-            }
-            player.setInGame(false);
+            removePlayerFromGame(player);
         }
     }
 
@@ -540,8 +525,6 @@ public class Server {
         return null;
     }
 
-
-
     private static Player getUnauthenticatedPlayer(SocketChannel clientSocketChannel) {
         for (Player player : unauthenticatedPlayers) {
             if (player.getSocketChannel() == clientSocketChannel) {
@@ -590,7 +573,7 @@ public class Server {
     }
 
 
-    //function that inrements the game count and returns the value
+    //function that increments the game count and returns the value
     // it must be synchronized because it is called from multiple threads
     private static synchronized int getAndIncrementGameCount() {
         return ++gameCount;
@@ -744,7 +727,7 @@ public class Server {
         }
     }
 
-    //function that creates a set of all of the players that are in the waitQueue or are in the games and that have the player.wasUpdated() flag set to true
+    //function that creates a set of all the players that are in the waitQueue or are in the games and that have the player.wasUpdated() flag set to true
     //the function then updates the file with the new score and games played for each player in the set
 
     public static void updateAllPlayers(){
