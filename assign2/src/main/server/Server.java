@@ -21,8 +21,8 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Server {
     private static final int PORT = 12345;
@@ -42,8 +42,7 @@ public class Server {
     private static int gameCount = 0;
     private static double ratio = 10;
 
-    //todo change name
-    private static final Lock databaseLock = new ReentrantLock();
+    private static final ReadWriteLock databaseLock = new ReentrantReadWriteLock();
 
 
     public static void main(String[] args) throws IOException {
@@ -104,7 +103,6 @@ public class Server {
                         startGame(players, true);
                     }
                 }
-                //todo take absent players into account
 
                 if (normalQueue.size() >= MAX_PLAYERS && activeGames.size() < MAX_GAMES) {
                     System.out.println("Creating a new game with players: ");
@@ -129,9 +127,6 @@ public class Server {
                     if (players.size() == MAX_PLAYERS) {
                         startGame(players, false);
                     }
-                }
-                else {
-                    //todo change
                 }
 
                 // Sleep for some time to avoid high CPU usage
@@ -299,7 +294,7 @@ public class Server {
             unauthenticatedPlayers.remove(player);
             if(player != null) {
                 normalQueue.add(player);
-                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected simple mode.\n" +
+                sendMessageToPlayer(player, MessageType.INFO.toHeader() + "You have selected simple mode.\n" +
                         "Waiting for other players to join...\n" +
                         "Players in queue: " + normalQueue.size() + "\n");
                 player.startWaitTimer();
@@ -309,7 +304,7 @@ public class Server {
             unauthenticatedPlayers.remove(player);
             if(player != null) {
                 rankedQueue.add(player);
-                sendMessageToPlayer(player, MessageType.GAME_MODE_RESPONSE.toHeader() + "You have selected ranked mode.\n" +
+                sendMessageToPlayer(player, MessageType.INFO.toHeader() + "You have selected ranked mode.\n" +
                         "Waiting for other players to join...\n" +
                         "Players in queue: " + rankedQueue.size() + "\n");
                 player.startWaitTimer();
@@ -426,7 +421,6 @@ public class Server {
         String[] tokens = parseMessage.split(";");
         String username;
         String password;
-        String csvFile = "users.csv";
         try {
             username = tokens[0];
             password = tokens[1];
@@ -541,6 +535,11 @@ public class Server {
                 }
             }
         }
+        for (Player player : unauthenticatedPlayers) {
+            if (player.getSocketChannel() == clientSocketChannel) {
+                return player;
+            }
+        }
         return null;
     }
 
@@ -626,7 +625,7 @@ public class Server {
 
     public static boolean login(String username, String password, SocketChannel clientSocketChannel) {
         // Acquire the lock for reading
-        databaseLock.lock();
+        databaseLock.readLock().lock();
         String csvFile = "users.csv";
         boolean loginSuccessful = false;
         try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
@@ -684,14 +683,14 @@ public class Server {
             sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
             loginSuccessful = false;
         } finally {
-            databaseLock.unlock();
+            databaseLock.readLock().unlock();
         }
         return loginSuccessful;
     }
 
     public static void register(String username, String password, SocketChannel clientSocketChannel) {
         // Acquire the lock for writing
-        databaseLock.lock();
+        databaseLock.writeLock().lock();
         String csvFile = "users.csv";
         try (FileWriter writer = new FileWriter(csvFile, true)) {
             String hashedPassword = Helper.hashPassword(password);
@@ -723,7 +722,7 @@ public class Server {
             sendMessage(clientSocketChannel, MessageType.AUTHENTICATION_FAILURE.toHeader());
         } finally {
             // Release the lock after writing
-            databaseLock.unlock();
+            databaseLock.writeLock().unlock();
         }
     }
 
@@ -734,8 +733,9 @@ public class Server {
             return;
         }
         player.setUpdated(false);
-        databaseLock.lock();
+        databaseLock.readLock().lock();
         String csvFile = "users.csv";
+        boolean found = false;
         try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
             String line;
             boolean headerLine = true;
@@ -749,11 +749,15 @@ public class Server {
                 String csvPassword = fields[1];
 
                 if (csvUsername.equals(player.getUsername())) {
+                    found = true;
+                    databaseLock.readLock().unlock();
+                    databaseLock.writeLock().lock();
                     String newLine = csvUsername + "," + csvPassword + "," + player.getScore() + "," + player.getGamesPlayed();
                     Path path = Path.of(csvFile);
                     String fileContent = Files.readString(path);
                     fileContent = fileContent.replace(line, newLine);
                     Files.writeString(path, fileContent);
+                    databaseLock.writeLock().unlock();
                     break;
                 }
             }
@@ -761,7 +765,10 @@ public class Server {
         catch (IOException e) {
             System.err.println("Error reading CSV file: " + e.getMessage());
         } finally {
-            databaseLock.unlock();
+            //if locked, unlock
+            if (!found){
+                databaseLock.readLock().unlock();
+            }
         }
     }
 

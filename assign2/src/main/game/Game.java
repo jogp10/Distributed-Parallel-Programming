@@ -20,8 +20,8 @@ public class Game implements Runnable {
     private final ConcurrentList<Player> players;
     private static final int MAX_RANGE = 100;
     private static final int MIN_RANGE = 1;
-    private int GAME_ROUND;
     private final int MAX_ROUNDS = 3;
+    private int GAME_ROUND;
     private final ConcurrentHashMap<Player, Integer> playerGuesses = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Player, Lock> playerLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Player, Condition> playerConditions = new ConcurrentHashMap<>();
